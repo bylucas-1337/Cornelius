@@ -8,7 +8,7 @@ Cette page explique comment installer Cornelius sur un ordinateur Linux (Debian,
 - Un compte avec `sudo`, pour installer les paquets du système.
 - Une webcam, un micro, des haut-parleurs et un écran.
 - Un navigateur récent, par exemple Chromium ou Google Chrome.
-- Une clé OpenAI d’un compte payant : sans elle, Cornelius ne peut pas parler.
+- Une clé Gemini (prioritaire) ou OpenAI : sans clé, Cornelius ne peut pas parler. La clé Gemini peut aussi servir aux images si le projet Google y a accès ; modèles, quotas et tarifs dépendent du compte.
 - Node.js 24 (version 24.2 ou plus récente) et Python 3.12. Le script d’installation les installe, avec l’aide de fnm pour Node.js (voir « Préparer Node.js 24 »).
 - En option : une carte graphique (voir [GPU](gpu.md)), un jeton Météo Concept et un jeton PRIM pour les modules Météo et Transports.
 
@@ -33,10 +33,10 @@ Vérifiez la version de Node.js :
 node --version
 ```
 
-Il faut `v24.2.0` ou plus récent dans la version 24. Ubuntu et Debian fournissent une version plus ancienne, ou aucune. Dans ce cas, installez fnm, un gestionnaire de versions de Node.js qui travaille dans votre dossier personnel, sans droits administrateur :
+Il faut `v24.2.0` ou plus récent dans la version 24. Ubuntu et Debian fournissent une version plus ancienne, ou aucune. Dans ce cas, installez fnm, un gestionnaire de versions de Node.js qui travaille dans votre dossier personnel. La commande ci-dessous installe une version fixe depuis le registre Cargo et vérifie les sommes des dépendances avec le fichier de verrouillage. Cargo doit être installé via les dépôts de votre distribution :
 
 ```sh
-curl -fsSL https://fnm.vercel.app/install | bash
+cargo install fnm --version 1.38.1 --locked
 ```
 
 Fermez le terminal, ouvrez-en un nouveau (fnm n’est actif que dans les nouveaux terminaux), puis revenez dans le dossier :
@@ -77,24 +77,26 @@ Voici ce que fait réellement le script, dans l’ordre :
 8. Il liste les caméras `/dev/video*` et signale celles qui ne sont pas lisibles.
 9. Avec `--systemd`, il installe et démarre les services (voir plus bas).
 
-À la fin, il affiche l’adresse de l’administration et rappelle la clé OpenAI si elle manque.
+À la fin, il affiche l’adresse de l’administration et rappelle qu’une clé Gemini ou OpenAI est nécessaire si aucune n’est configurée.
 
 Si le script s’arrête en route, corrigez la cause puis relancez-le avec les mêmes options. Il refait chaque étape, mais garde ce qui est déjà prêt. Deux cas courants :
 
 - un téléchargement de modèle échoue (connexion coupée, accès refusé par un proxy) : le message se termine par une erreur réseau, par exemple `<urlopen error ...>`. Relancez quand la connexion revient. Les petits modèles déjà vérifiés sont gardés ;
 - le dernier message est `Failed to connect to bus` : systemd n’est pas disponible pour votre compte (conteneur, WSL sans systemd, session ouverte sans systemd). Tout le reste est installé : démarrez avec `scripts/start.sh` (voir [Sans systemd](#sans-systemd--les-scripts)) au lieu des services.
 
-## Renseigner la clé OpenAI
+## Renseigner la clé Gemini ou OpenAI
 
-`npm run setup` crée le fichier `.env` à la racine du dossier, lisible par vous seul. Il contient le port (`PORT=3000`), la base de données, le mot de passe de l’administration (`cornelius` au départ), un jeton privé pour la perception et une ligne `OPENAI_API_KEY=` vide. Sur un `.env` existant, il ne change rien et complète seulement les lignes manquantes.
+`npm run setup` crée le fichier `.env` à la racine du dossier, lisible par vous seul. Il contient le port (`PORT=3000`), la base de données, le mot de passe de l’administration (`cornelius` au départ), un jeton privé pour la perception et les lignes vides `GEMINI_API_KEY=` et `OPENAI_API_KEY=`. Sur un `.env` existant, il complète seulement les lignes manquantes.
 
-Le plus simple : collez la clé dans l’administration, rubrique **Mise en route**, carte **Clés et jetons** ; elle compte tout de suite. Vous pouvez aussi ouvrir `.env` avec un éditeur de texte et coller votre clé après le signe égal :
+Le plus simple : collez la clé Gemini (prioritaire) ou OpenAI dans l’administration, rubrique **Mise en route**, carte **Clés et jetons** ; elle compte tout de suite. Vous pouvez aussi ouvrir `.env` avec un éditeur de texte et coller votre clé après le signe égal :
 
 ```sh
 nano .env
 ```
 
 ```sh
+GEMINI_API_KEY=...
+# Facultatif : secours de conversation et clé des images OpenAI.
 OPENAI_API_KEY=sk-...
 ```
 

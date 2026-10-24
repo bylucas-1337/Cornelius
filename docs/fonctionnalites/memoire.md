@@ -20,13 +20,13 @@ Avec « Cornelius » ouvert à tout le monde, personne n’est reconnu, sauf si 
 
 Pendant la conversation, le texte de ce que dit la personne reste en mémoire vive sur l’ordinateur. Il n’est jamais écrit sur le disque.
 
-Après la conversation, ce texte et les souvenirs actuels de la personne sont envoyés à OpenAI, qui propose quoi retenir, corriger ou oublier. La dernière phrase de Cornelius avant chaque réponse l’accompagne, pour comprendre une réponse courte. Cornelius vérifie ensuite que chaque proposition s’appuie bien sur des phrases de cette personne, puis l’enregistre. Le texte de la conversation est alors effacé : seul reste, pour chaque souvenir, le nombre de phrases à son origine.
+Après la conversation, ce texte et les souvenirs actuels de la personne sont envoyés à Gemini si sa clé est configurée, sinon à OpenAI ; le modèle propose quoi retenir, corriger ou oublier. La dernière phrase de Cornelius avant chaque réponse l’accompagne, pour comprendre une réponse courte. Cornelius vérifie ensuite que chaque proposition s’appuie bien sur des phrases de cette personne, puis l’enregistre. Le texte de la conversation est alors effacé : seul reste, pour chaque souvenir, le nombre de phrases à son origine.
 
 Ne sont pas retenus : les suppositions, les secrets et mots de passe, les questions, les citations, les faits sur d’autres personnes. Les paroles de Cornelius, ce que voit la caméra et les résultats des modules ne deviennent jamais des souvenirs. Une extraction ne modifie aucun autre réglage.
 
 Demander à voix haute d’ajouter, de corriger ou d’oublier quelque chose est seulement une proposition, traitée après la conversation. Cornelius ne confirme pas un changement avant qu’il soit appliqué. Pour un oubli immédiat, passez par l’administration.
 
-Bloquer OpenAI, ou arrêter Cornelius, annule les extractions en cours.
+Bloquer les connexions à l’IA, ou arrêter Cornelius, annule les extractions en cours.
 
 ## Comment Cornelius s’en sert
 
@@ -34,7 +34,7 @@ Aucun souvenir n’est donné à Cornelius à l’ouverture de la conversation. 
 
 ## Le consentement à la création du profil
 
-En ajoutant une personne dans **Le foyer et les visages → Une nouvelle personne**, la case **Laisser Cornelius retenir des souvenirs pour cette personne (extraits par OpenAI après la conversation)** est cochée au départ. Décochez-la pour créer le profil sans mémoire. Ce choix reste modifiable à tout moment dans la rubrique **Mémoire**.
+En ajoutant une personne dans **Le foyer et les visages → Une nouvelle personne**, la case **Laisser Cornelius retenir des souvenirs pour cette personne (extraits par Gemini ou OpenAI après la conversation)** est cochée au départ. Décochez-la pour créer le profil sans mémoire. Ce choix reste modifiable à tout moment dans la rubrique **Mémoire**.
 
 ## Gérer la mémoire
 

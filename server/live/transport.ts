@@ -5,10 +5,10 @@ import { agentTaskLabels, type AgentTaskView } from '../../shared/agents.js';
 import type { DiagnosticLog } from '../logs.js';
 import type { PersonalMemory } from '../memory.js';
 import type { ConnectClientEvent, ConnectServerEvent } from 'openai/resources/live/sideband';
-import type { LiveCreateResponse } from 'openai/resources/live/live';
 import type { DisplayCard, ImageCard, LunaCardRequest, Scope } from '../../shared/types.js';
 import type { ToolResult } from '../../shared/addons.js';
 import type { AddonReadOutcome } from '../addons/runtime.js';
+import type { TavilySearch } from '../tavily-search.js';
 import type { SessionController, SessionTransport } from '../controller.js';
 import { illustrationPrompt } from '../image-illustration.js';
 import { validators } from '../../shared/validation.js';
@@ -20,7 +20,12 @@ import {
   personalContextInstructions,
 } from './configuration.js';
 import { cardOverlap, cardTokens, DUPLICATE_CARD_OVERLAP } from './card-overlap.js';
-import type { LiveAudioConnection, LiveConnection, LiveGateway } from './gateway.js';
+import type {
+  LiveAudioConnection,
+  LiveConnection,
+  LiveCreateResponse,
+  LiveGateway,
+} from './gateway.js';
 
 export interface AddonToolBridge {
   tools(profileId?: string | null): {
@@ -95,6 +100,8 @@ interface ActiveSession {
   response?: Promise<LiveCreateResponse>;
   offer?: string;
   remoteId?: string;
+  provider: 'openai' | 'gemini';
+  websocketTransport: boolean;
   connection?: LiveConnection;
   /** Satellite audio de la conversation : le serveur porte le son sur un WebSocket principal. */
   satelliteId: string | null;
@@ -197,6 +204,7 @@ const SATELLITE_ECHO_GUARD_MS = 600;
 // Outils sans objet sur un satellite : pas d’écran ni de caméra ; sans profil, pas de mémoire.
 const SATELLITE_EXCLUDED_TOOLS = /^(vision|image)__/u;
 const ANONYMOUS_EXCLUDED_TOOLS = /^memory__/u;
+const maxWebSources = 2;
 
 // Sous le délai de conservation des connexions HTTP inactives de Node (4 s).
 const prewarmIntervalMs = 3000;
@@ -238,6 +246,27 @@ export class LiveTransport implements SessionTransport {
     const muted = !echoCancelled && this.now() < active.echoUntil;
     active.audio.sendAudio(muted ? Buffer.alloc(pcm.length) : pcm);
   }
+  private browserOutput: ((pcm: Buffer | null) => void) | null = null;
+  /** Son de Cornelius vers le navigateur du miroir (mode WebSocket). */
+  attachBrowserOutput(output: ((pcm: Buffer | null) => void) | null) {
+    this.browserOutput = output;
+  }
+  /** Micro du miroir vers Live (trames PCM16 16 kHz). */
+  browserAudio(pcm: Buffer): void {
+    const active = this.active;
+    if (
+      !active?.audio ||
+      active.satelliteId ||
+      !active.attached ||
+      active.closing ||
+      active.finalized ||
+      active.blocked ||
+      this.isBlocked()
+    )
+      return;
+    const muted = this.now() < active.echoUntil;
+    active.audio.sendAudio(muted ? Buffer.alloc(pcm.length) : pcm);
+  }
   attachMemory(memory: PersonalMemory) {
     this.memory = memory;
   }
@@ -251,6 +280,8 @@ export class LiveTransport implements SessionTransport {
       homeAssistant?: Pick<HomeAssistant, 'tools' | 'handles' | 'run'>;
       agents?: Pick<Agents, 'tools' | 'handles' | 'run' | 'received'>;
       imageGeneration?: ImageGenerationToolBridge;
+      webSearch?: Pick<TavilySearch, 'search'>;
+      geminiTavilyEnabled?: () => boolean;
       personality?: (profileId: string | null) => PersonalityPreferences;
     } = {},
     private readonly now: () => number = Date.now,
@@ -274,20 +305,20 @@ export class LiveTransport implements SessionTransport {
       active.connection?.dispose();
       active.connection = undefined;
     }
-    this.controller.close('Connexions OpenAI bloquées.');
+    this.controller.close('Connexions au fournisseur d’IA bloquées.');
   }
   unavailableReason() {
-    if (this.isBlocked()) return 'Connexions OpenAI bloquées dans l’administration.';
+    if (this.isBlocked()) return 'Connexions au fournisseur d’IA bloquées dans l’administration.';
     if (!this.gateway)
-      return 'Ajoutez la clé OpenAI dans l’administration (Mise en route, Clés et jetons).';
+      return 'Ajoutez une clé Gemini ou OpenAI dans l’administration (Mise en route, Clés et jetons).';
     return null;
   }
-  /** Nouvelle clé OpenAI (ou plus de clé) : prise en compte dès la prochaine conversation. */
+  /** Nouvelle clé Gemini/OpenAI (ou plus de clé) : prise en compte à la prochaine conversation. */
   setGateway(gateway: LiveGateway | null) {
     this.gateway = gateway;
     this.lastPrewarmAt = 0;
   }
-  /** Garde une connexion HTTPS ouverte vers OpenAI quand une admission est probable. */
+  /** Garde une connexion HTTPS ouverte quand une admission est probable. */
   prewarm() {
     if (!this.gateway?.prewarm || this.isBlocked() || (this.active && !this.active.finalized))
       return;
@@ -297,7 +328,7 @@ export class LiveTransport implements SessionTransport {
     void this.gateway.prewarm().catch(() => {});
   }
   open(scope: Scope) {
-    if (this.isBlocked()) throw new Error('Connexions OpenAI bloquées.');
+    if (this.isBlocked()) throw new Error('Connexions au fournisseur d’IA bloquées.');
     // The controller can release its close watchdog just before this transport's timer.
     // A newly admitted scope authorizes disposal of only the previous closing session.
     if (
@@ -311,11 +342,13 @@ export class LiveTransport implements SessionTransport {
     this.active = {
       scope: { ...scope },
       abort: new AbortController(),
+      provider: this.gateway?.provider ?? 'openai',
       satelliteId: satellite?.id ?? null,
       echoUntil: 0,
       blocked: false,
       attached: false,
       started: false,
+      websocketTransport: false,
       mediaConnected: false,
       remoteStarted: false,
       greeted: false,
@@ -356,16 +389,17 @@ export class LiveTransport implements SessionTransport {
   private connectSatellite(active: ActiveSession) {
     const gateway = this.gateway;
     if (!gateway?.connect) {
-      queueMicrotask(() => this.controller.close('Clé OpenAI absente.'));
+      queueMicrotask(() => this.controller.close('Clé Gemini ou OpenAI absente.'));
       return;
     }
+    gateway.setTavilySearchEnabled?.(this.integrations.geminiTavilyEnabled?.() ?? true);
     // Profil rattaché au satellite (choisi dans l’administration), ou conversation anonyme.
     const profileId = this.controller.snapshot().state.activeProfile?.id ?? null;
     const { client: _client, audio, ...config } = this.configuration(profileId, true);
     active.toolsProfileId = profileId;
     // Mémoire personnelle seulement au nom d’un profil : une conversation anonyme ne laisse rien.
     if (profileId) this.memory?.open(active.scope);
-    this.logs?.write('info', 'openai', 'Session Live du satellite demandée', {
+    this.logs?.write('info', active.provider, 'Session Live du satellite demandée', {
       interactionId: active.scope.interactionId,
     });
     const connection = gateway.connect(
@@ -493,7 +527,7 @@ export class LiveTransport implements SessionTransport {
         resolve(accepted && sameScope(scope, this.controller.scope()));
       };
       const timer = setTimeout(() => {
-        this.logs?.write('warn', 'openai', 'Contexte caméra non confirmé par Live', {
+        this.logs?.write('warn', active.provider, 'Contexte caméra non confirmé par Live', {
           interactionId: scope.interactionId,
           eventId,
         });
@@ -515,17 +549,20 @@ export class LiveTransport implements SessionTransport {
     });
   }
   offer(scope: Scope, sdp: string): Promise<LiveCreateResponse> {
-    if (this.isBlocked()) throw new Error('Connexions OpenAI bloquées.');
+    if (this.isBlocked()) throw new Error('Connexions au fournisseur d’IA bloquées.');
     const active = this.require(scope);
     // Le satellite porte déjà le son de sa conversation : aucune offre WebRTC n’y a sa place.
     if (active.satelliteId) throw new Error('Conversation tenue par un satellite.');
     // Une clé changée pendant la création ne mélange pas deux comptes : cette session garde la
     // passerelle qui l’a créée.
     const gateway = this.gateway;
-    if (!gateway) throw new Error('Clé OpenAI absente.');
+    if (!gateway) throw new Error('Clé Gemini ou OpenAI absente.');
+    gateway.setTavilySearchEnabled?.(this.integrations.geminiTavilyEnabled?.() ?? true);
     if (active.offer && active.offer !== sdp) throw new Error('Une offre média existe déjà.');
     if (active.response) return active.response;
-    this.logs?.write('info', 'openai', 'Offre média reçue', { interactionId: scope.interactionId });
+    this.logs?.write('info', active.provider, 'Offre média reçue', {
+      interactionId: scope.interactionId,
+    });
     active.offer = sdp;
     this.memory?.open(active.scope);
     active.toolsProfileId = this.controller.snapshot().state.activeProfile?.id ?? null;
@@ -534,18 +571,28 @@ export class LiveTransport implements SessionTransport {
       .create(this.configuration(active.toolsProfileId), sdp, active.abort.signal)
       .then(async (result) => {
         active.remoteId = result.session.id;
+        if (result.transport.type === 'websocket') {
+          active.websocketTransport = true;
+          active.mediaConnected = true;
+        }
         if (this.disposed || active.finalized || this.active !== active) {
           if (!active.blocked && !this.isBlocked()) {
             await gateway.hangup?.(result.session.id).catch((error: unknown) => {
-              this.logs?.write('warn', 'openai', 'Clôture de la création tardive non confirmée', {
-                interactionId: scope.interactionId,
-                error,
-              });
+              this.logs?.write(
+                'warn',
+                active.provider,
+                'Clôture de la création tardive non confirmée',
+                {
+                  interactionId: scope.interactionId,
+                  error,
+                },
+              );
             });
           }
           throw new Error('Session média périmée.');
         }
-        if (active.blocked || this.isBlocked()) throw new Error('Connexions OpenAI bloquées.');
+        if (active.blocked || this.isBlocked())
+          throw new Error('Connexions au fournisseur d’IA bloquées.');
         active.connection = gateway.attach(result.session.id, {
           open: () => {
             if (this.disposed || active.finalized || this.active !== active) return;
@@ -565,10 +612,12 @@ export class LiveTransport implements SessionTransport {
             }
           },
         });
+        if (active.connection && 'sendAudio' in active.connection)
+          active.audio = active.connection as unknown as LiveAudioConnection;
         return result;
       })
       .catch((error: unknown) => {
-        this.logs?.write('error', 'openai', 'Connexion Live impossible', {
+        this.logs?.write('error', active.provider, 'Connexion Live impossible', {
           interactionId: scope.interactionId,
           error,
         });
@@ -582,7 +631,8 @@ export class LiveTransport implements SessionTransport {
           [400, 401, 403, 404, 422, 429].includes(status);
         this.controller.close(
           refused
-            ? 'Création Live refusée par OpenAI (' +
+            ? 'Création Live refusée par ' +
+                (active.provider === 'gemini' ? 'Gemini' : 'OpenAI') +
                 status +
                 '). Vérifiez la clé, le modèle et le quota.'
             : 'Connexion Live impossible ; clôture à confirmer. Vérifiez le réseau.',
@@ -659,7 +709,7 @@ export class LiveTransport implements SessionTransport {
       active.connection.send(event);
       return true;
     } catch (error) {
-      this.logs?.write('error', 'openai', 'Envoi sur le canal de contrôle échoué', {
+      this.logs?.write('error', active.provider, 'Envoi sur le canal de contrôle échoué', {
         interactionId: active.scope.interactionId,
         event: event.type,
         error,
@@ -673,7 +723,7 @@ export class LiveTransport implements SessionTransport {
     if (active.appended.has(key)) return false;
     if (!this.deliverInstruction(active, content)) return false;
     active.appended.add(key);
-    this.logs?.write('info', 'openai', 'Instruction Live ajoutée', {
+    this.logs?.write('info', active.provider, 'Instruction Live ajoutée', {
       interactionId: active.scope.interactionId,
       instruction: key,
     });
@@ -712,7 +762,7 @@ export class LiveTransport implements SessionTransport {
       })
     )
       return;
-    this.logs?.write('info', 'openai', 'Information de carte confiée à la voix', {
+    this.logs?.write('info', active.provider, 'Information de carte confiée à la voix', {
       interactionId: active.scope.interactionId,
     });
   }
@@ -762,7 +812,7 @@ export class LiveTransport implements SessionTransport {
             homeDevicesDelegation.trim().replace(/;$/u, '.'),
         );
       active.toolsProfileId = profileId;
-      this.logs?.write('info', 'openai', 'Outils du profil actualisés dans la session', {
+      this.logs?.write('info', active.provider, 'Outils du profil actualisés dans la session', {
         interactionId: scope.interactionId,
         profileId,
       });
@@ -862,7 +912,7 @@ export class LiveTransport implements SessionTransport {
       event.type !== 'response.event'
     ) {
       const error = object(object(event).error);
-      this.logs?.write(event.type === 'error' ? 'error' : 'info', 'openai', event.type, {
+      this.logs?.write(event.type === 'error' ? 'error' : 'info', active.provider, event.type, {
         interactionId: active.scope.interactionId,
         remoteId: active.remoteId,
         ...(event.type === 'error'
@@ -871,10 +921,12 @@ export class LiveTransport implements SessionTransport {
       });
     }
     // Satellite : le flux de sortie (16 kHz, silences compris) part tel quel vers sa pièce.
-    if (active.satelliteId && String(object(event).type ?? '') === 'session.output_audio.delta') {
+    if (String(object(event).type ?? '') === 'session.output_audio.delta') {
       const delta = object(event).delta;
       if (typeof delta === 'string' && delta.length <= 262_144)
-        this.satelliteOutput?.(active.satelliteId, Buffer.from(delta, 'base64'));
+        if (active.satelliteId)
+          this.satelliteOutput?.(active.satelliteId, Buffer.from(delta, 'base64'));
+        else if (active.websocketTransport) this.browserOutput?.(Buffer.from(delta, 'base64'));
       if (audibleLiveOutput(event)) active.echoUntil = this.now() + SATELLITE_ECHO_GUARD_MS;
     }
     // Le calcul d’énergie ne sert qu’à la minuterie de silence (mode voix ou option).
@@ -884,6 +936,11 @@ export class LiveTransport implements SessionTransport {
       audibleLiveOutput(event)
     )
       this.controller.noteAssistantOutput(active.scope);
+    if (
+      String(object(event).type ?? '') === 'session.output_audio.interrupted' &&
+      active.websocketTransport
+    )
+      this.browserOutput?.(null);
     if (event.type === 'session.usage.updated') return;
     if (event.type === 'session.closed') {
       this.finalize(active);
@@ -999,8 +1056,13 @@ export class LiveTransport implements SessionTransport {
         if (!['https:', 'http:'].includes(url.protocol) || url.username || url.password) continue;
         const references = this.references(active, delegationId);
         if (references.sources.some((source) => source.url === url.href)) continue;
+        if (references.sources.length >= maxWebSources) break;
         const title = typeof citation.title === 'string' ? citation.title.trim() : '';
-        references.sources.push({ id: url.href, url: url.href, title: title || url.hostname });
+        references.sources.push({
+          id: url.href,
+          url: url.href,
+          title: (title || url.hostname).slice(0, 80),
+        });
         for (const cardId of references.cardIds)
           this.controller.setCardWebSources(active.scope, cardId, references.sources);
       }
@@ -1119,6 +1181,11 @@ export class LiveTransport implements SessionTransport {
         void this.runImageGeneration(active, delegation, item.call_id, name, args);
         return;
       }
+      if (name === 'web__search') {
+        this.beginTool(active, delegation);
+        void this.runWebSearch(active, delegation, countKey, item.call_id, args);
+        return;
+      }
       if (name === 'memory__recall' && this.memory) {
         this.beginTool(active, delegation);
         this.sendItem(active, item.call_id, this.memory.recall(active.scope, args));
@@ -1157,7 +1224,7 @@ export class LiveTransport implements SessionTransport {
         // La délégation livre déjà son résumé à Live ; une commentary le ferait parler deux fois.
       }
       if (duplicate)
-        this.logs?.write('info', 'openai', 'Carte Luna en double écartée', {
+        this.logs?.write('info', active.provider, 'Carte Luna en double écartée', {
           interactionId: active.scope.interactionId,
         });
       this.sendItem(
@@ -1183,7 +1250,7 @@ export class LiveTransport implements SessionTransport {
           this.collectWebCitations(active, delegationId || delegation, item);
       this.logs?.write(
         event.type === 'response.completed' ? 'info' : 'warn',
-        'openai',
+        active.provider,
         String(event.type),
         {
           interactionId: active.scope.interactionId,
@@ -1373,7 +1440,7 @@ export class LiveTransport implements SessionTransport {
         }
       }
     } catch (error) {
-      this.logs?.write('warn', 'openai', 'Outil de module interrompu', {
+      this.logs?.write('warn', active.provider, 'Outil de module interrompu', {
         interactionId: active.scope.interactionId,
         tool: name,
         error,
@@ -1381,6 +1448,53 @@ export class LiveTransport implements SessionTransport {
     }
     this.sendItem(active, callId, tool);
     this.finishTool(active, delegation);
+  }
+  private async runWebSearch(
+    active: ActiveSession,
+    delegation: string,
+    citationKey: string,
+    callId: string,
+    args: unknown,
+  ) {
+    active.webSearches.set(callId, citationKey);
+    this.controller.setWebSearchActive(active.scope, true);
+    let output: unknown;
+    try {
+      const query = object(args).query;
+      if (typeof query !== 'string') throw new Error('La recherche ne contient pas de question.');
+      if (!this.integrations.webSearch) throw new Error('La recherche web est indisponible.');
+      const result = await this.integrations.webSearch.search(query, active.abort.signal);
+      const references = this.references(active, citationKey);
+      const results = result.results.slice(0, maxWebSources);
+      for (const source of results) {
+        if (references.sources.some((item) => item.url === source.url)) continue;
+        if (references.sources.length >= maxWebSources) break;
+        references.sources.push({
+          id: source.url,
+          title: source.title.slice(0, 80),
+          url: source.url,
+        });
+      }
+      for (const cardId of references.cardIds)
+        this.controller.setCardWebSources(active.scope, cardId, references.sources);
+      output = {
+        ok: true,
+        trust: 'untrusted_external_content',
+        results,
+      };
+    } catch (error) {
+      const message = error instanceof Error ? error.message : 'Erreur inconnue.';
+      this.logs?.write('warn', active.provider, 'Recherche web indisponible', {
+        interactionId: active.scope.interactionId,
+        error: message,
+      });
+      output = { ok: false, error: message };
+    } finally {
+      active.webSearches.delete(callId);
+      this.controller.setWebSearchActive(active.scope, active.webSearches.size > 0);
+      this.sendItem(active, callId, output);
+      this.finishTool(active, delegation);
+    }
   }
   private async runHomeAssistant(
     active: ActiveSession,
@@ -1429,7 +1543,7 @@ export class LiveTransport implements SessionTransport {
           })
         : failureToolResult('Action inconnue.');
     } catch (error) {
-      this.logs?.write('warn', 'openai', 'Action HTTP interrompue', {
+      this.logs?.write('warn', active.provider, 'Action HTTP interrompue', {
         interactionId: active.scope.interactionId,
         error,
       });
@@ -1456,7 +1570,7 @@ export class LiveTransport implements SessionTransport {
         args,
       );
     } catch (error) {
-      this.logs?.write('warn', 'openai', 'Vision locale interrompue', {
+      this.logs?.write('warn', active.provider, 'Vision locale interrompue', {
         interactionId: active.scope.interactionId,
         error,
       });

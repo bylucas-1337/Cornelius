@@ -1,17 +1,18 @@
 # La génération d’images
 
-Cornelius peut dessiner une image à la voix et l’afficher sur le miroir, soit sur l’ordinateur du miroir, soit avec OpenAI. Cette page présente les deux moteurs, les modèles proposés, leur installation, la façon de demander, de remontrer ou d’interrompre une image, et ce qui est conservé. Elle s’adresse à la personne qui règle le miroir pour la maison.
+Cornelius peut dessiner une image à la voix et l’afficher sur le miroir, soit sur l’ordinateur du miroir, soit avec OpenAI ou Gemini. Cette page présente les moteurs, les modèles proposés, leur installation, la façon de demander, de remontrer ou d’interrompre une image, et ce qui est conservé. Elle s’adresse à la personne qui règle le miroir pour la maison.
 
 ## Le principe
 
-En haut de la carte, **Où créer les images** propose deux moteurs :
+En haut de la carte, **Où créer les images** propose trois moteurs :
 
 - **Sur ce PC** (par défaut) : l’image est calculée sur l’ordinateur du miroir, par un modèle installé depuis l’administration. Elle n’est envoyée à aucun service d’image en ligne. Il faut une carte graphique bien dotée.
 - **Avec OpenAI** : l’image est créée par l’API d’images d’OpenAI, avec la clé OpenAI déjà utilisée pour la conversation. Rien à installer, mais la description part chez OpenAI et chaque image est facturée sur votre compte. Voir [Avec OpenAI](#avec-openai).
+- **Avec Gemini** : l’image est créée par l’API Gemini, avec la clé Gemini déjà utilisée pour la conversation. Rien à installer. L’accès et le tarif dépendent du modèle, du quota et de la facturation du projet Google associé à la clé. Voir [Avec Gemini](#avec-gemini).
 
-Dans les deux cas, la conversation vocale passe par OpenAI comme d’habitude : c’est elle qui comprend la demande et rédige la description de l’image.
+Dans les deux cas, la conversation vocale passe par le fournisseur configuré (Gemini en priorité, OpenAI en secours) : c’est lui qui comprend la demande et rédige la description de l’image.
 
-Toutes les images sont carrées, au format WebP : 512 × 512 pixels sur ce PC, 1024 × 1024 avec OpenAI. La fonction est commune au foyer : le moteur, le modèle et les réglages valent pour tous les profils.
+Les images sont carrées : WebP en 512 × 512 pixels sur ce PC, WebP en 1024 × 1024 avec OpenAI, et PNG en 1024 × 1024 avec Gemini. La fonction est commune au foyer : le moteur, le modèle et les réglages valent pour tous les profils.
 
 La carte **Génération d’image** se trouve dans la rubrique **Modules**, groupe « Capacités de Cornelius ».
 
@@ -39,6 +40,24 @@ Choisissez **Avec OpenAI** en haut de la carte. Les étapes deviennent :
 3. **Activer** : **Autoriser la création d’images** et **Illustrer automatiquement les cartes**, comme sur ce PC. Avec OpenAI, chaque illustration automatique est aussi une image facturée.
 
 Choisir OpenAI arrête le générateur local et libère la mémoire graphique ; revenir à **Sur ce PC** le relance avec le modèle installé. Les tarifs sont ceux de votre compte OpenAI (facturation à l’usage, selon le modèle et la qualité).
+
+## Avec Gemini
+
+Choisissez **Avec Gemini** en haut de la carte. La clé `GEMINI_API_KEY` configurée dans **Mise en route → Clés et jetons** (ou dans `.env`) est utilisée côté serveur ; elle n’est ni envoyée au navigateur ni ajoutée à l’URL de l’appel.
+
+Les modèles proposés suivent la [documentation officielle Gemini](https://ai.google.dev/gemini-api/docs/image-generation) :
+
+| Choix affiché | Identifiant API | Usage conseillé |
+| --- | --- | --- |
+| **Nano Banana 2.1** (par défaut) | `gemini-nano-banana-2.1` | Modèle récent et polyvalent |
+| **Nano Banana 2 Lite** | `gemini-3.1-flash-lite-image` | Rapidité et coût réduit |
+| **Nano Banana 2** | `gemini-3.1-flash-image` | Équilibre entre rapidité et qualité |
+| **Nano Banana Pro** | `gemini-3-pro-image` | Images complexes, détails et texte |
+| **Gemini 2.5 Flash Image (ancien)** | `gemini-2.5-flash-image` | Ancienne génération, si Google la laisse disponible pour le projet |
+
+La disponibilité, les limites gratuites, les quotas et les tarifs peuvent varier selon le modèle et le projet Google. Consultez les [tarifs Gemini](https://ai.google.dev/gemini-api/docs/pricing) avant de l’activer. Une clé configurée ne garantit pas l’accès à chaque modèle. Les illustrations automatiques utilisent elles aussi le quota et peuvent être facturées. En cas de quota atteint, de facturation désactivée ou de modèle non autorisé, Cornelius explique l’erreur à l’oral et dans l’état du module ; il ne bascule pas silencieusement vers OpenAI ni vers le générateur local.
+
+Choisir Gemini arrête l’usage du générateur local pour les nouvelles images. La description est envoyée à Google et l’image reçue est conservée localement comme PNG. Les erreurs de clé, de quota, de facturation et de filtre de sécurité sont présentées sans journaliser la clé ni la description.
 
 ## Installer et activer (sur ce PC)
 

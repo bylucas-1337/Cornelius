@@ -8,6 +8,7 @@ export interface AppConfig {
   secureCookies: boolean;
   staticRoot?: string;
   openaiKey?: string;
+  geminiKey?: string;
   perceptionToken?: string;
   imageGenerationToken?: string;
   loginRateLimit?: number;
@@ -70,6 +71,7 @@ export function loadConfig(): AppConfig & { port: number } {
       .map((host) => host.trim())
       .filter(Boolean),
     openaiKey: process.env.OPENAI_API_KEY || undefined,
+    geminiKey: process.env.GEMINI_API_KEY || undefined,
     perceptionToken: process.env.CORNELIUS_PERCEPTION_TOKEN || undefined,
     imageGenerationToken: process.env.CORNELIUS_IMAGE_GENERATION_TOKEN || undefined,
     meteoConceptToken: process.env.CORNELIUS_METEO_CONCEPT_TOKEN || undefined,

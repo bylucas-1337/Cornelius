@@ -76,7 +76,7 @@ Les fichiers qui construisent ces textes sont décrits dans [Les prompts](../dev
 
 ## Conservation
 
-Le style et les repères sont conservés sur l’ordinateur du miroir, dans la base de Cornelius, et transmis à OpenAI pour la conversation. Supprimer une personne dans **Le foyer et les visages** efface aussi son style et ses repères.
+Le style et les repères sont conservés sur l’ordinateur du miroir, dans la base de Cornelius, et transmis au fournisseur de conversation configuré. Supprimer une personne dans **Le foyer et les visages** efface aussi son style et ses repères.
 
 Les repères sont distincts de la mémoire. Vous les écrivez vous-même et ils restent tels quels. La mémoire, elle, est retenue après les conversations (voir [La mémoire](memoire.md)).
 

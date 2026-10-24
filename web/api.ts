@@ -12,6 +12,7 @@ import type {
   ImageGenerationProvider,
   OpenAIImageModel,
   OpenAIImageQuality,
+  GeminiImageModel,
   ImageGenerationStatus,
   SecretView,
 } from '../shared/types';
@@ -289,6 +290,11 @@ export const api = {
       method: 'PATCH',
       body: JSON.stringify({ enabled }),
     }),
+  geminiTavily: (enabled: boolean) =>
+    request<StateEvent>('/api/admin/web-search/gemini-tavily', {
+      method: 'PATCH',
+      body: JSON.stringify({ enabled }),
+    }),
   greeting: (mode: GreetingMode) =>
     request<StateEvent>('/api/admin/greeting', {
       method: 'PATCH',
@@ -323,6 +329,7 @@ export const api = {
     provider?: ImageGenerationProvider;
     openaiModel?: OpenAIImageModel;
     openaiQuality?: OpenAIImageQuality;
+    geminiModel?: GeminiImageModel;
   }) =>
     request<ImageGenerationStatus>('/api/admin/image-generation', {
       method: 'PATCH',

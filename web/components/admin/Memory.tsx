@@ -243,9 +243,9 @@ function MemoryPanel({
           </p>
           <p className="text-xs leading-relaxed text-muted-foreground">
             Après la conversation, ce que {name} a dit et ses souvenirs actuels sont envoyés à
-            OpenAI, qui propose quoi retenir. Le texte de la conversation est ensuite effacé : seul
-            reste le nombre de phrases à l’origine de chaque souvenir. À plusieurs, ou si la caméra
-            ne sait pas qui parle, rien n’est retenu.
+            Gemini si sa clé est configurée, sinon à OpenAI, qui propose quoi retenir. Le texte de
+            la conversation est ensuite effacé : seul reste le nombre de phrases à l’origine de
+            chaque souvenir. À plusieurs, ou si la caméra ne sait pas qui parle, rien n’est retenu.
           </p>
           <p className="text-xs text-muted-foreground">
             Corriger, oublier ou changer l’autorisation ferme la conversation en cours avec {name},

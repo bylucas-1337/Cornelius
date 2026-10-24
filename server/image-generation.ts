@@ -10,6 +10,8 @@ import {
   IMAGE_GENERATION_MODEL_DEFAULT,
   IMAGE_GENERATION_MODELS,
   IMAGE_GENERATION_PROVIDERS,
+  GEMINI_IMAGE_MODELS,
+  GEMINI_IMAGE_MODEL_DEFAULT,
   OPENAI_IMAGE_MODEL_DEFAULT,
   OPENAI_IMAGE_MODELS,
   OPENAI_IMAGE_QUALITIES,
@@ -19,6 +21,7 @@ import {
   type ImageGenerationModel,
   type ImageGenerationProvider,
   type ImageGenerationStatus,
+  type GeminiImageModel,
   type OpenAIImageModel,
   type OpenAIImageQuality,
   type Scope,
@@ -26,13 +29,18 @@ import {
 import { compile } from '../shared/validation.js';
 import type { DiagnosticLog } from './logs.js';
 import { OPENAI_IMAGE_SIZE, openAIImageError, type OpenAIImageCreator } from './openai-images.js';
+import type { GeminiImageCreator } from './gemini-images.js';
 
 /** Accès à l’API d’images d’OpenAI : la même clé que la conversation, relue à chaque image. */
 export interface OpenAIImageSource {
   creator(): OpenAIImageCreator | null;
   blocked(): boolean;
 }
-type AnyImageModel = ImageGenerationModel | OpenAIImageModel;
+export interface GeminiImageSource {
+  creator(): GeminiImageCreator | null;
+  blocked(): boolean;
+}
+type AnyImageModel = ImageGenerationModel | OpenAIImageModel | GeminiImageModel;
 
 interface GenerateInput {
   prompt: string;
@@ -43,6 +51,7 @@ interface Pending {
   output: string;
   input: GenerateInput;
   model: AnyImageModel;
+  extension: 'webp' | 'png';
   automatic: boolean;
   profileId: string | null;
   startedAt: number;
@@ -57,6 +66,7 @@ interface StoredImage {
   id: string;
   prompt: string;
   model: AnyImageModel;
+  extension: 'webp' | 'png';
   automatic: boolean;
   profileId: string | null;
   createdAt: number;
@@ -77,11 +87,15 @@ const dimensions = { width: 512, height: 512 } as const;
 const storedImages = 3;
 const timeoutMs = 3 * 60 * 1000;
 const idPattern = /^[a-f0-9-]{36}$/u;
-const generatedName = /^[a-f0-9-]{36}(\.tmp)?\.webp$/u;
+const generatedName = /^[a-f0-9-]{36}(\.tmp)?\.(webp|png)$/u;
 const maxImageBytes = 20 * 1024 * 1024;
 
 const isOpenAIModel = (model: string): model is OpenAIImageModel =>
   (OPENAI_IMAGE_MODELS as readonly string[]).includes(model);
+const isGeminiModel = (model: string): model is GeminiImageModel =>
+  (GEMINI_IMAGE_MODELS as readonly string[]).includes(model);
+const isRemoteModel = (model: string): model is OpenAIImageModel | GeminiImageModel =>
+  isOpenAIModel(model) || isGeminiModel(model);
 
 /** Mots significatifs, sans accents, pour retrouver une image par son sujet. */
 function words(text: string): Set<string> {
@@ -125,6 +139,8 @@ export class ImageGeneration {
   private openaiModel: OpenAIImageModel;
   private openaiQuality: OpenAIImageQuality;
   private openai: OpenAIImageSource | null = null;
+  private geminiModel: GeminiImageModel;
+  private gemini: GeminiImageSource | null = null;
   private loadedModel: ImageGenerationModel | null = null;
   private device: string | null = null;
   private detail: string | null = null;
@@ -153,16 +169,21 @@ export class ImageGeneration {
     this.sanaSteps = row?.sana_steps === 4 ? 4 : 2;
     const remote = db
       .prepare(
-        'SELECT provider, openai_model, openai_quality FROM image_generation_provider WHERE id = 1',
+        'SELECT provider, openai_model, openai_quality, gemini_model FROM image_generation_provider WHERE id = 1',
       )
       .get();
-    this.provider = remote?.provider === 'openai' ? 'openai' : 'local';
+    this.provider =
+      remote?.provider === 'openai' || remote?.provider === 'gemini' ? remote.provider : 'local';
     const openaiModel = String(remote?.openai_model ?? '');
     this.openaiModel = isOpenAIModel(openaiModel) ? openaiModel : OPENAI_IMAGE_MODEL_DEFAULT;
     const quality = String(remote?.openai_quality ?? '');
     this.openaiQuality = OPENAI_IMAGE_QUALITIES.includes(quality as OpenAIImageQuality)
       ? (quality as OpenAIImageQuality)
       : OPENAI_IMAGE_QUALITY_DEFAULT;
+    const geminiModel = String(remote?.gemini_model ?? '');
+    this.geminiModel = GEMINI_IMAGE_MODELS.includes(geminiModel as GeminiImageModel)
+      ? (geminiModel as GeminiImageModel)
+      : GEMINI_IMAGE_MODEL_DEFAULT;
     this.preload =
       db.prepare('SELECT enabled FROM image_generation_preload WHERE id = 1').get()?.enabled === 1;
     this.outputDirectory = outputDirectory;
@@ -178,6 +199,7 @@ export class ImageGeneration {
   tools() {
     if (!this.enabled) return [];
     const openai = this.provider === 'openai';
+    const gemini = this.provider === 'gemini';
     const sanaPrompt =
       !openai && this.model === 'sana-sprint-0.6b'
         ? ' Pour SANA-Sprint, rédige la description visuelle en anglais ; conserve à l’identique tout texte que la personne demande explicitement d’inscrire dans l’image.'
@@ -188,7 +210,9 @@ export class ImageGeneration {
         description:
           (openai
             ? 'Créer avec OpenAI une nouvelle image carrée à partir d’une description et l’afficher sur le miroir.'
-            : 'Créer localement une nouvelle image carrée de 512 × 512 pixels à partir d’une description et l’afficher sur le miroir.') +
+            : gemini
+              ? 'Créer avec Gemini une nouvelle image carrée à partir d’une description et l’afficher sur le miroir.'
+              : 'Créer localement une nouvelle image carrée de 512 × 512 pixels à partir d’une description et l’afficher sur le miroir.') +
           ' Utilise un prompt visuel fidèle à la demande, sans ajouter de personnes, marque, texte ou détail non demandé.' +
           sanaPrompt +
           ' La génération peut prendre plusieurs dizaines de secondes. Une nouvelle demande interrompt l’image en cours.',
@@ -214,6 +238,8 @@ export class ImageGeneration {
       openaiModel: this.openaiModel,
       openaiQuality: this.openaiQuality,
       openaiUnavailable: this.openaiUnavailable(),
+      geminiModel: this.geminiModel,
+      geminiUnavailable: this.geminiUnavailable(),
       preload: this.preload,
       storedImages: this.stored.filter((image) => !image.automatic).length,
       illustrateCards: this.illustrateCards,
@@ -325,6 +351,21 @@ export class ImageGeneration {
     this.changed();
   }
 
+  /** Relie la clé Gemini du serveur ; elle est relue à chaque génération. */
+  useGemini(source: GeminiImageSource) {
+    this.gemini = source;
+  }
+
+  setGeminiModel(model: GeminiImageModel) {
+    if (!GEMINI_IMAGE_MODELS.includes(model)) throw new Error('Modèle d’image Gemini inconnu.');
+    if (this.pending) throw new Error('Attendez la fin de la génération en cours.');
+    this.db
+      .prepare('UPDATE image_generation_provider SET gemini_model = ? WHERE id = 1')
+      .run(model);
+    this.geminiModel = model;
+    this.changed();
+  }
+
   private openaiUnavailable(): string | null {
     if (!this.openai) return 'OpenAI n’est pas relié à ce serveur.';
     if (this.openai.blocked()) return 'Connexions OpenAI bloquées dans l’administration.';
@@ -332,11 +373,19 @@ export class ImageGeneration {
     return null;
   }
 
+  private geminiUnavailable(): string | null {
+    if (!this.gemini) return 'Gemini n’est pas relié à ce serveur.';
+    if (this.gemini.blocked())
+      return 'Connexions au fournisseur d’IA bloquées dans l’administration.';
+    if (!this.gemini.creator()) return 'Clé Gemini absente : renseignez-la dans Mise en route.';
+    return null;
+  }
+
   /** Le moteur choisi peut-il créer une image maintenant ? */
   private ready(): boolean {
-    return this.provider === 'openai'
-      ? this.openaiUnavailable() === null
-      : this.configured && this.worker?.readyState === 1;
+    if (this.provider === 'openai') return this.openaiUnavailable() === null;
+    if (this.provider === 'gemini') return this.geminiUnavailable() === null;
+    return this.configured && this.worker?.readyState === 1;
   }
 
   connect(socket: WebSocket) {
@@ -381,6 +430,9 @@ export class ImageGeneration {
     if (this.provider === 'openai') {
       const reason = this.openaiUnavailable();
       if (reason) return failure(reason);
+    } else if (this.provider === 'gemini') {
+      const reason = this.geminiUnavailable();
+      if (reason) return failure(reason);
     } else {
       if (!this.configured) return failure('Générateur d’image non configuré sur ce serveur.');
       if (this.worker?.readyState !== 1)
@@ -394,7 +446,8 @@ export class ImageGeneration {
     }
     const input = { ...args, prompt: args.prompt.trim() };
     const id = randomUUID();
-    const output = join(this.outputDirectory, id + '.webp');
+    const extension = this.provider === 'gemini' ? 'png' : 'webp';
+    const output = join(this.outputDirectory, `${id}.${extension}`);
     let abortListener = () => {};
     const promise = new Promise<ImageGenerationOutcome>((resolvePromise, rejectPromise) => {
       abortListener = () => {
@@ -406,7 +459,13 @@ export class ImageGeneration {
         id,
         output,
         input,
-        model: this.provider === 'openai' ? this.openaiModel : this.model,
+        model:
+          this.provider === 'openai'
+            ? this.openaiModel
+            : this.provider === 'gemini'
+              ? this.geminiModel
+              : this.model,
+        extension,
         automatic,
         profileId,
         startedAt: this.now(),
@@ -419,7 +478,8 @@ export class ImageGeneration {
         startedAt: this.pending.startedAt,
       });
       signal.addEventListener('abort', abortListener, { once: true });
-      if (this.provider === 'openai') this.remote(this.pending, this.openai!.creator()!);
+      if (this.provider === 'openai') this.remoteOpenAI(this.pending, this.openai!.creator()!);
+      else if (this.provider === 'gemini') this.remoteGemini(this.pending, this.gemini!.creator()!);
       else
         this.send({
           type: 'generate',
@@ -433,7 +493,11 @@ export class ImageGeneration {
           output,
         });
       this.detail =
-        this.provider === 'openai' ? 'Création par OpenAI en cours…' : 'Génération en cours…';
+        this.provider === 'openai'
+          ? 'Création par OpenAI en cours…'
+          : this.provider === 'gemini'
+            ? 'Création par Gemini en cours…'
+            : 'Génération en cours…';
       this.changed();
     });
     try {
@@ -499,7 +563,7 @@ export class ImageGeneration {
   }
 
   /** Confie l’image à OpenAI ; la réponse suit le même chemin que celle du générateur local. */
-  private remote(pending: Pending, creator: OpenAIImageCreator) {
+  private remoteOpenAI(pending: Pending, creator: OpenAIImageCreator) {
     const abort = new AbortController();
     pending.abort = abort;
     creator({
@@ -533,9 +597,56 @@ export class ImageGeneration {
     );
   }
 
+  private remoteGemini(pending: Pending, creator: GeminiImageCreator) {
+    const abort = new AbortController();
+    pending.abort = abort;
+    creator({
+      prompt: pending.input.prompt,
+      model: pending.model as GeminiImageModel,
+      signal: abort.signal,
+    }).then(
+      (image) => {
+        if (this.pending?.id !== pending.id) return;
+        if (
+          image.length < 24 ||
+          image.length > maxImageBytes ||
+          image.readUInt32BE(16) !== 1024 ||
+          image.readUInt32BE(20) !== 1024 ||
+          image.toString('ascii', 12, 16) !== 'IHDR' ||
+          !image.subarray(0, 8).equals(Buffer.from([137, 80, 78, 71, 13, 10, 26, 10]))
+        ) {
+          this.receive({ type: 'error', requestId: pending.id, message: 'Image Gemini invalide.' });
+          return;
+        }
+        try {
+          writeFileSync(pending.output, image, { mode: 0o600, flag: 'wx' });
+        } catch {
+          this.receive({
+            type: 'error',
+            requestId: pending.id,
+            message: 'Impossible d’enregistrer l’image reçue de Gemini.',
+          });
+          return;
+        }
+        this.receive({ type: 'result', requestId: pending.id });
+      },
+      (error: unknown) => {
+        if (this.pending?.id !== pending.id) return;
+        this.receive({
+          type: 'error',
+          requestId: pending.id,
+          message:
+            error instanceof Error ? error.message.slice(0, 240) : 'Génération Gemini impossible.',
+        });
+      },
+    );
+  }
+
   generatedFile(id: string): string | null {
-    if (!idPattern.test(id) || !this.stored.some((image) => image.id === id)) return null;
-    const path = join(this.outputDirectory, id + '.webp');
+    if (!idPattern.test(id)) return null;
+    const image = this.stored.find((stored) => stored.id === id);
+    if (!image) return null;
+    const path = join(this.outputDirectory, `${id}.${image.extension}`);
     if (!existsSync(path)) return null;
     const stat = statSync(path);
     return stat.isFile() && stat.size > 12 && stat.size <= maxImageBytes ? path : null;
@@ -574,10 +685,11 @@ export class ImageGeneration {
     this.activityListener?.(null);
     if (event.type === 'result' && this.remember(pending)) {
       this.lastDurationMs = Math.max(0, this.now() - pending.startedAt);
-      const remote = isOpenAIModel(pending.model);
+      const remote = isRemoteModel(pending.model);
+      const providerName = isGeminiModel(pending.model) ? 'Gemini' : 'OpenAI';
       if (!remote) this.loadedModel = pending.model as ImageGenerationModel;
       this.detail =
-        (remote ? 'Dernière image créée par OpenAI en ' : 'Dernière image générée en ') +
+        (remote ? `Dernière image créée par ${providerName} en ` : 'Dernière image générée en ') +
         (this.lastDurationMs / 1000).toFixed(1) +
         ' s.';
       const card = this.card(pending.id, pending.input.prompt, pending.model);
@@ -601,10 +713,10 @@ export class ImageGeneration {
       this.logs?.write(
         'info',
         'image',
-        remote ? 'Image créée par OpenAI' : 'Image générée localement',
+        remote ? `Image créée par ${providerName}` : 'Image générée localement',
         {
           model: pending.model,
-          ...(remote ? { quality: this.openaiQuality } : {}),
+          ...(isOpenAIModel(pending.model) ? { quality: this.openaiQuality } : {}),
           durationMs: this.lastDurationMs,
           width: card.width,
           height: card.height,
@@ -627,14 +739,15 @@ export class ImageGeneration {
   }
 
   private card(id: string, prompt: string, model: AnyImageModel): ImageCard {
+    const extension = isGeminiModel(model) ? 'png' : 'webp';
     return {
       schemaVersion: 1,
       cardType: 'image',
       title: 'Image générée',
       prompt,
-      imageUrl: `/api/generated-images/${id}.webp`,
+      imageUrl: `/api/generated-images/${id}.${extension}`,
       model,
-      ...(isOpenAIModel(model)
+      ...(isRemoteModel(model)
         ? { width: OPENAI_IMAGE_SIZE, height: OPENAI_IMAGE_SIZE }
         : dimensions),
       primaryValue: null,
@@ -647,12 +760,13 @@ export class ImageGeneration {
 
   /** Garde le fichier produit ; au-delà de trois, l’illustration puis l’image la plus ancienne partent. */
   private remember(pending: Pending): boolean {
-    const path = join(this.outputDirectory, pending.id + '.webp');
+    const path = join(this.outputDirectory, `${pending.id}.${pending.extension}`);
     if (!existsSync(path) || !statSync(path).isFile()) return false;
     this.stored.push({
       id: pending.id,
       prompt: pending.input.prompt,
       model: pending.model,
+      extension: pending.extension,
       automatic: pending.automatic,
       profileId: pending.profileId,
       createdAt: this.now(),
@@ -662,14 +776,22 @@ export class ImageGeneration {
         (image, index) => image.automatic && index < this.stored.length - 1,
       );
       const [evicted] = this.stored.splice(illustration >= 0 ? illustration : 0, 1);
-      this.remove(evicted!.id);
+      this.remove(evicted!.id, evicted!.extension);
     }
     return this.generatedFile(pending.id) !== null;
   }
 
-  private remove(id: string) {
+  private remove(id: string, extension?: 'webp' | 'png') {
     try {
-      unlinkSync(join(this.outputDirectory, id + '.webp'));
+      if (extension) unlinkSync(join(this.outputDirectory, `${id}.${extension}`));
+      else {
+        for (const suffix of ['webp', 'png'])
+          try {
+            unlinkSync(join(this.outputDirectory, `${id}.${suffix}`));
+          } catch {
+            // The other format was not created.
+          }
+      }
     } catch {
       // Déjà supprimé, ou verrouillé : la purge du prochain démarrage le reprendra.
     }

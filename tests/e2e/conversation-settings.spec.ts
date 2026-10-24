@@ -50,17 +50,29 @@ test('le module Web retire et rend la recherche web, réglage conservé', async 
   };
   await open();
   const toggle = page.getByRole('switch', { name: 'Autoriser la recherche web' });
+  const tavily = page.getByRole('switch', { name: 'Utiliser Tavily avec Gemini' });
   await expect(toggle).toBeChecked();
+  await expect(tavily).toBeChecked();
   await toggle.click();
   await expect(toggle).not.toBeChecked();
   await expect(page.getByText('Recherche web désactivée.', { exact: true })).toBeVisible();
+  await tavily.click();
+  await expect(tavily).not.toBeChecked();
+  await expect(
+    page.getByText('Recherche Google native de Gemini activée.', { exact: true }),
+  ).toBeVisible();
   try {
     await page.reload();
     await open();
     await expect(toggle).not.toBeChecked();
+    await expect(tavily).not.toBeChecked();
     await expect(page.locator('#module-web')).toContainText('Désactivée');
   } finally {
     await page.request.patch('/api/admin/web-search', {
+      headers: { origin },
+      data: { enabled: true },
+    });
+    await page.request.patch('/api/admin/web-search/gemini-tavily', {
       headers: { origin },
       data: { enabled: true },
     });

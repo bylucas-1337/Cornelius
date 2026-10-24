@@ -38,7 +38,7 @@ La liste se met à jour d’elle-même. Voici les étapes, dans l’ordre :
 
 | Étape | Où agir |
 |---|---|
-| Clé OpenAI | **Mise en route → Clés et jetons**, ou le fichier `.env` |
+| Clé Gemini (prioritaire) ou OpenAI | **Mise en route → Clés et jetons**, ou le fichier `.env` |
 | Service caméra (perception) | Les scripts de démarrage (bouton **Ouvrir le diagnostic**) |
 | Caméra choisie | Rubrique « Caméra et reconnaissance » (bouton **Choisir la caméra**) |
 | Miroir ouvert | Bouton **Activer et ouvrir le miroir** |
@@ -46,17 +46,17 @@ La liste se met à jour d’elle-même. Voici les étapes, dans l’ordre :
 | Visage enregistré | Rubrique « Le foyer et les visages » (bouton **Enregistrer un visage**) |
 | Mot d’appel « Cornelius » | Seulement si la conversation s’ouvre au mot « Cornelius » (bouton **Guide du mot d’appel**) |
 | Mot de passe administrateur | **Mise en route → Mot de passe administrateur**, ou le fichier `.env` (étape 1 ci-dessus) |
-| Accès à OpenAI | Bouton **Autoriser OpenAI**, si l’accès a été bloqué |
+| Accès à l’IA | Bouton **Autoriser l’IA**, si l’accès a été bloqué |
 
 En haut de chaque page, le panneau de la conversation résume l’état de Cornelius sur une ligne (par exemple « Configuration à terminer » ou « En veille attentive ») et propose **Démarrer la session** ou **Arrêter la session**. Le lien « Voir la mise en route » ramène à cette liste.
 
 Quand tout est prêt, la carte affiche « Tout est prêt » et l’administration s’ouvre désormais sur « Quand il écoute ».
 
-## 3. Clé OpenAI
+## 3. Clé Gemini (ou OpenAI)
 
-Sans clé, Cornelius ne peut pas parler. Créez une clé dans votre compte OpenAI (page [API keys](https://platform.openai.com/api-keys)), sur un compte payant. Collez-la dans la carte **Clés et jetons**, plus bas dans la même rubrique, puis **Enregistrer** : elle compte tout de suite, sans redémarrage. (Elle peut aussi s’écrire dans `.env` après `OPENAI_API_KEY=`, avec un redémarrage.)
+Sans clé, Cornelius ne peut pas parler. La clé Gemini est prioritaire : créez-la dans [Google AI Studio](https://aistudio.google.com/apikey) et vérifiez les modèles ainsi que les quotas disponibles pour votre compte. Elle peut aussi servir à la génération d’images Gemini, si le projet associé y a accès. Collez-la dans **Mise en route → Clés et jetons**, puis **Enregistrer** : elle compte tout de suite, sans redémarrage. (Dans `.env`, utilisez `GEMINI_API_KEY=` et redémarrez Cornelius.) Si vous préférez OpenAI, ajoutez une clé dans votre compte OpenAI (page [API keys](https://platform.openai.com/api-keys)) ; elle sert de secours si aucune clé Gemini n’est configurée et aux images OpenAI.
 
-La clé reste sur cet ordinateur : l’administration n’en montre ensuite que les quatre derniers caractères. Chaque conversation est facturée par OpenAI. Cornelius ne suit pas les dépenses : fixez une limite dans votre compte OpenAI. Le bouton **Bloquer OpenAI**, dans le panneau de la conversation de « Quand il écoute », coupe et interdit toute connexion à OpenAI jusqu’à **Autoriser OpenAI**.
+La clé reste sur cet ordinateur : l’administration n’en montre ensuite que les quatre derniers caractères. Les limites et conditions de gratuité de Gemini dépendent du modèle et du compte Google ; vérifiez-les dans AI Studio. Le bouton **Bloquer l’IA**, dans le panneau de la conversation, coupe toute connexion au fournisseur jusqu’à **Autoriser l’IA**.
 
 ## 4. Service caméra (perception)
 
@@ -78,7 +78,7 @@ Cette étape est « Facultatif » quand la conversation s’ouvre au mot « Corn
 
 ## 6. Ouvrir le miroir et activer la voix
 
-Cliquez sur **Activer et ouvrir le miroir**, à l’étape « Miroir ouvert ». Ce bouton réactive le démarrage automatique et ouvre la page du miroir dans sa propre fenêtre, l’administration restant ouverte. Acceptez l’accès au micro quand le navigateur le demande (touchez « Activer la voix » sur le miroir s’il l’affiche), puis passez la fenêtre du miroir en plein écran avec F11. Si l’accès à OpenAI est bloqué, le bouton s’appelle **Autoriser OpenAI et ouvrir le miroir** et lève aussi le blocage.
+Cliquez sur **Activer et ouvrir le miroir**, à l’étape « Miroir ouvert ». Ce bouton réactive le démarrage automatique et ouvre la page du miroir dans sa propre fenêtre, l’administration restant ouverte. Acceptez l’accès au micro quand le navigateur le demande (touchez « Activer la voix » sur le miroir s’il l’affiche), puis passez la fenêtre du miroir en plein écran avec F11. Si l’accès à l’IA est bloqué, le bouton s’appelle **Autoriser l’IA et ouvrir le miroir** et lève aussi le blocage.
 
 Tant que la clé OpenAI manque, le miroir affiche seulement l’orbe et « Cornelius n’est pas encore configuré : ouvrez l’administration sur cet ordinateur. », suivi de l’adresse de l’administration. C’est normal : l’étape « Miroir ouvert » est quand même validée.
 
@@ -90,7 +90,7 @@ Pour choisir un autre micro ou d’autres haut-parleurs, ouvrez **Micro et haut-
 
 ## 7. Les personnes et leur visage
 
-Dans **Le foyer et les visages → Une nouvelle personne**, saisissez le « Prénom ou nom d’affichage ». Une case permet à Cornelius de retenir des souvenirs pour cette personne : ils sont extraits par OpenAI après la conversation, et se gèrent dans la rubrique « Mémoire ». Cliquez ensuite sur **Ajouter au foyer**.
+Dans **Le foyer et les visages → Une nouvelle personne**, saisissez le « Prénom ou nom d’affichage ». Une case permet à Cornelius de retenir des souvenirs pour cette personne : ils sont extraits par Gemini ou OpenAI après la conversation, et se gèrent dans la rubrique « Mémoire ». Cliquez ensuite sur **Ajouter au foyer**.
 
 Pour que Cornelius reconnaisse la personne, mémorisez son visage : bouton **Mémoriser le visage de … maintenant**, ou plus tard **Mémoriser ce visage** dans la carte « Reconnaissance des visages ». La personne se place seule devant le miroir et suit les cinq positions : « De face », « Un côté », « L’autre côté », « Vers le haut », « Vers le bas ». Aucune photo n’est conservée : seulement des signatures numériques, sur cet ordinateur.
 

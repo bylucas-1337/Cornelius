@@ -274,9 +274,11 @@ test('recherche web, accueil et personnes reconnues gardent le comportement exis
   try {
     let preferences = new SessionPreferences(db);
     assert.equal(preferences.getWebSearchEnabled(), true);
+    assert.equal(preferences.getGeminiTavilyEnabled(), true);
     assert.equal(preferences.getGreetingMode(), 'name');
     assert.equal(preferences.getKnownPeopleOnly(), false);
     preferences.setWebSearchEnabled(false);
+    preferences.setGeminiTavilyEnabled(false);
     preferences.setGreetingMode('off');
     preferences.setKnownPeopleOnly(true);
     // La migration rejouée ne réinitialise pas les choix enregistrés.
@@ -285,6 +287,7 @@ test('recherche web, accueil et personnes reconnues gardent le comportement exis
     db = openDatabase(path);
     preferences = new SessionPreferences(db);
     assert.equal(preferences.getWebSearchEnabled(), false);
+    assert.equal(preferences.getGeminiTavilyEnabled(), false);
     assert.equal(preferences.getGreetingMode(), 'off');
     assert.equal(preferences.getKnownPeopleOnly(), true);
     assert.throws(() =>

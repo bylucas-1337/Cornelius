@@ -15,7 +15,7 @@ Cette page dit ce qui reste sur l’ordinateur du miroir, ce qui part chez OpenA
 - **Les visages.** L’enregistrement d’un visage garde des signatures numériques, calculées à partir des images : ce sont des nombres, pas des photos. Elles sont rangées dans la base. La reconnaissance se fait sur l’ordinateur.
 - **La vision locale.** La description d’une image est calculée sur l’ordinateur par le modèle LFM2.5-VL. Seul le texte de cette description rejoint la conversation, donc OpenAI. Elle n’est jamais écrite dans la mémoire. Voir [La vision locale](../fonctionnalites/vision-locale.md).
 - **Le mot d’appel.** « Cornelius » est reconnu sur l’ordinateur, avec openWakeWord. Aucun service en ligne n’est appelé pour cela.
-- **Les images créées.** Par défaut, la génération d’images tourne sur l’ordinateur. Si vous choisissez « Avec OpenAI » dans le module, la description de l’image (jamais une image de la caméra) part chez OpenAI, qui renvoie l’image. Dans les deux cas, les trois dernières images sont gardées dans `data/generated-images/`, puis effacées au prochain démarrage du serveur.
+- **Les images créées.** Par défaut, la génération d’images tourne sur l’ordinateur. Si vous choisissez « Avec OpenAI » ou « Avec Gemini » dans le module, la description de l’image (jamais une image de la caméra) part chez le fournisseur choisi, qui renvoie l’image. Les trois dernières images sont gardées dans `data/generated-images/`, puis effacées au prochain démarrage du serveur.
 
 ## Où va le son du micro
 
@@ -26,25 +26,25 @@ La caméra est lue par la perception, mais le micro est lu par le navigateur qui
 - **Sans mot d’appel ni micro gardé prêt.** Le micro préparé est relâché après 15 secondes si aucune conversation ne s’ouvre.
 - **Pendant une conversation.** Le son part chez OpenAI, le temps de la conversation seulement. Il passe aussi par la détection locale de la parole.
 
-**Les satellites audio.** Un satellite envoie le son de son micro à l’ordinateur, par le réseau local et chiffré (WebSocket sécurisé, port `3443`), seulement quand Cornelius écoute « Cornelius » ou pendant sa propre conversation. L’ordinateur y cherche le mot, puis transmet la conversation à OpenAI comme pour le miroir. Une conversation de satellite rattaché à une personne nourrit la mémoire de cette personne ; sinon, elle ne laisse aucun souvenir. Le bouton du satellite coupe son micro. Voir [Les satellites audio](../fonctionnalites/satellites.md).
+**Les satellites audio.** Un satellite envoie le son de son micro à l’ordinateur, par le réseau local et chiffré (WebSocket sécurisé, port `3443`), seulement quand Cornelius écoute « Cornelius » ou pendant sa propre conversation. L’ordinateur y cherche le mot, puis transmet la conversation au fournisseur configuré (Gemini en priorité, OpenAI en secours), comme pour le miroir. Une conversation de satellite rattaché à une personne nourrit la mémoire de cette personne ; sinon, elle ne laisse aucun souvenir. Le bouton du satellite coupe son micro. Voir [Les satellites audio](../fonctionnalites/satellites.md).
 
-Pour couper tout envoi vers OpenAI, utilisez **Bloquer OpenAI** (voir plus bas).
+Pour couper tout envoi vers le fournisseur d’IA, utilisez **Bloquer l’IA** (voir plus bas).
 
-## Ce qui part chez OpenAI, et quand
+## Ce qui part au fournisseur d’IA, et quand
 
-**Pendant une conversation**, OpenAI reçoit :
+**Pendant une conversation**, Gemini reçoit les données si `GEMINI_API_KEY` est configurée ; sinon, elles sont envoyées à OpenAI :
 
 - la voix et le texte de l’échange ;
 - les consignes de Cornelius, le style du foyer et, si la personne est reconnue, son prénom, son style et ses repères (**Personnaliser Cornelius → Ce que Cornelius reçoit** montre ce texte) ;
 - les descriptions de la caméra, si la vision est active ;
 - les résultats des modules, des commandes, de Home Assistant et des agents, et les souvenirs consultés quand une question porte sur eux ;
-- les recherches sur le web, faites par OpenAI, si **Modules → Web → Autoriser la recherche web** est activé.
+- les recherches sur le web, si **Modules → Web → Autoriser la recherche web** est activé. Avec Gemini, le choix **Utiliser Tavily avec Gemini** envoie la requête à Tavily ; sinon, Gemini utilise Google Search natif. Avec OpenAI, OpenAI conserve sa recherche native. Ne demandez pas de rechercher des informations personnelles ou secrètes.
 
-Les conversations sont ouvertes avec l’option `store: false` d’OpenAI, qui demande de ne pas conserver la réponse pour la consulter ensuite. Cette option ne dit rien des autres règles de conservation d’OpenAI : voir les conditions de votre compte.
+Les conversations Gemini Live sont transmises par WebSocket au service Gemini. Avec le niveau gratuit de Gemini, Google indique que le contenu peut être utilisé pour améliorer ses produits : vérifiez les [conditions de Gemini API](https://ai.google.dev/gemini-api/terms) et les quotas applicables à votre compte. Avec OpenAI, les sessions sont ouvertes avec `store: false`, qui demande de ne pas conserver la réponse pour la consulter ensuite ; cette option ne dit rien des autres règles de conservation d’OpenAI.
 
-**Après une conversation**, si la personne était seule, reconnue, et que sa mémoire est autorisée, le texte de ce qu’elle a dit et ses souvenirs actuels sont envoyés à OpenAI, qui propose quoi retenir. Ce texte est ensuite effacé. Voir [La mémoire](../fonctionnalites/memoire.md).
+**Après une conversation**, si la personne était seule, reconnue, et que sa mémoire est autorisée, le texte de ce qu’elle a dit et ses souvenirs actuels sont envoyés au même fournisseur configuré, qui propose quoi retenir. Ce texte est ensuite effacé. Voir [La mémoire](../fonctionnalites/memoire.md).
 
-**À aucun moment** OpenAI ne reçoit d’image de la caméra, de signature de visage, ni le son de la veille.
+**À aucun moment** le fournisseur de conversation ne reçoit d’image de la caméra, de signature de visage, ni le son de la veille.
 
 ## Ce qui part ailleurs
 
@@ -67,7 +67,7 @@ Tout est sur l’ordinateur du miroir, dans le dossier `data/` (voir [Configurat
 | Trois dernières images créées | `data/generated-images/`, vidé à chaque démarrage |
 | Mot de passe de l’administration | le fichier `.env` au départ ; s’il est changé dans **Mise en route**, une empreinte (scrypt) dans la base, jamais le mot de passe lui-même |
 | Secrets des commandes (`CORNELIUS_SECRET_*`) | le fichier `.env`, jamais dans la base |
-| Clé OpenAI, jetons Météo et Transports | la base locale s’ils sont saisis dans l’administration (ils y passent avant ceux de `.env`), sinon le fichier `.env`. L’administration n’en montre que les quatre derniers caractères, et le journal les masque. |
+| Clés Gemini/OpenAI, jetons Météo et Transports | la base locale s’ils sont saisis dans l’administration (ils y passent avant ceux de `.env`), sinon le fichier `.env`. L’administration n’en montre que les quatre derniers caractères, et le journal les masque. |
 
 Sous Linux, la base, ses copies, `.env` et le journal ne sont lisibles que par leur propriétaire.
 
@@ -117,11 +117,11 @@ L’administration demande le mot de passe administrateur (celui de `.env`, ou c
 
 Le miroir, lui, ne demande aucun mot de passe. Le miroir et l’administration répondent à l’ordinateur lui-même et, en HTTPS, aux appareils du réseau local (désactivable avec `CORNELIUS_LAN=0`), jamais à Internet. Un autre appareil n’ouvre le miroir qu’après avoir été autorisé une fois avec le mot de passe administrateur.
 
-## Les dépenses OpenAI
+## Quotas et dépenses
 
-Cornelius ne compte pas ce que coûtent les conversations et ne les bloque pas pour ce motif. Fixez vos limites de dépense dans votre compte OpenAI. Les modes **Rapide** et **Ultra rapide** de **Quand il écoute → Réglages avancés → Délégation : recherches et actions** coûtent plus cher que **Normal**.
+Cornelius ne compte ni les quotas gratuits Gemini ni le coût des conversations OpenAI. Vérifiez les limites et éventuelles dépenses dans AI Studio ou votre compte OpenAI.
 
-Le bouton **Bloquer OpenAI**, dans le panneau **Conversation** de la rubrique **Quand il écoute** (le seul où ce panneau est complet), ferme la conversation en cours et interdit toute nouvelle connexion à OpenAI, extraction de souvenirs comprise. Le blocage reste après un redémarrage. **Autoriser OpenAI** le lève. La caméra, la reconnaissance et la vision locale continuent de fonctionner.
+Le bouton **Bloquer l’IA**, dans le panneau **Conversation** de la rubrique **Quand il écoute** (le seul où ce panneau est complet), ferme la conversation en cours et interdit toute nouvelle connexion au fournisseur configuré, extraction de souvenirs comprise. Le blocage reste après un redémarrage. **Autoriser l’IA** le lève. La caméra, la reconnaissance et la vision locale continuent de fonctionner.
 
 ## Voir aussi
 

@@ -73,7 +73,7 @@ export interface ImageCard {
   title: string;
   prompt: string;
   imageUrl: string;
-  model: ImageGenerationModel | OpenAIImageModel;
+  model: ImageGenerationModel | OpenAIImageModel | GeminiImageModel;
   width: number;
   height: number;
   primaryValue: null;
@@ -126,6 +126,8 @@ export interface MirrorState {
   delegationMode: DelegationMode;
   /** Outil de recherche web natif de la délégation (module « Web ») ; absent : activé. */
   webSearchEnabled?: boolean;
+  /** Recherche Tavily avec Gemini ; absent : activée pour préserver le comportement existant. */
+  geminiTavilyEnabled?: boolean;
   /** Accueil parlé d’une personne reconnue ; absent : « Bonjour Prénom ». */
   greeting?: GreetingMode;
   /** Modes 1 et 3 : seule une personne reconnue ouvre une conversation. */
@@ -340,8 +342,8 @@ export const IMAGE_GENERATION_MODELS = [
 ] as const;
 export type ImageGenerationModel = (typeof IMAGE_GENERATION_MODELS)[number];
 export const IMAGE_GENERATION_MODEL_DEFAULT: ImageGenerationModel = 'flux2-klein-4b';
-/** Où les images sont créées : sur ce PC, ou par l’API d’images d’OpenAI avec la même clé. */
-export const IMAGE_GENERATION_PROVIDERS = ['local', 'openai'] as const;
+/** Où les images sont créées : localement ou par l’API OpenAI/Gemini. */
+export const IMAGE_GENERATION_PROVIDERS = ['local', 'openai', 'gemini'] as const;
 export type ImageGenerationProvider = (typeof IMAGE_GENERATION_PROVIDERS)[number];
 export const OPENAI_IMAGE_MODELS = [
   'gpt-image-2.5-flare',
@@ -353,6 +355,16 @@ export const OPENAI_IMAGE_MODEL_DEFAULT: OpenAIImageModel = 'gpt-image-2.5-flare
 export const OPENAI_IMAGE_QUALITIES = ['low', 'medium', 'high'] as const;
 export type OpenAIImageQuality = (typeof OPENAI_IMAGE_QUALITIES)[number];
 export const OPENAI_IMAGE_QUALITY_DEFAULT: OpenAIImageQuality = 'low';
+/** Modèles d’image Gemini de l’API, y compris l’ancien modèle 2.5 encore disponible. */
+export const GEMINI_IMAGE_MODELS = [
+  'gemini-nano-banana-2.1',
+  'gemini-3.1-flash-lite-image',
+  'gemini-3.1-flash-image',
+  'gemini-3-pro-image',
+  'gemini-2.5-flash-image',
+] as const;
+export type GeminiImageModel = (typeof GEMINI_IMAGE_MODELS)[number];
+export const GEMINI_IMAGE_MODEL_DEFAULT: GeminiImageModel = 'gemini-nano-banana-2.1';
 export interface ImageGenerationActivity {
   kind: 'requested' | 'illustration';
   startedAt: number;
@@ -362,8 +374,11 @@ export interface ImageGenerationStatus {
   provider: ImageGenerationProvider;
   openaiModel: OpenAIImageModel;
   openaiQuality: OpenAIImageQuality;
+  geminiModel: GeminiImageModel;
   /** Raison pour laquelle OpenAI ne peut pas créer d’image (clé absente, connexions bloquées). */
   openaiUnavailable: string | null;
+  /** Raison pour laquelle Gemini ne peut pas créer d’image (clé absente). */
+  geminiUnavailable: string | null;
   /** Modèle chargé dès le démarrage du worker, avant la première conversation. */
   preload: boolean;
   /** Images demandées encore réaffichables (trois au plus, effacées au redémarrage). */

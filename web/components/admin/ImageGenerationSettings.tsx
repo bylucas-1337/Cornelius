@@ -11,6 +11,8 @@ import {
 import {
   IMAGE_GENERATION_MODEL_DEFAULT,
   IMAGE_GENERATION_MODELS,
+  GEMINI_IMAGE_MODELS,
+  GEMINI_IMAGE_MODEL_DEFAULT,
   OPENAI_IMAGE_MODEL_DEFAULT,
   OPENAI_IMAGE_MODELS,
   OPENAI_IMAGE_QUALITIES,
@@ -19,6 +21,7 @@ import {
   type ImageGenerationModel,
   type ImageGenerationProvider,
   type ImageGenerationStatus,
+  type GeminiImageModel,
   type ModelDownload,
   type OpenAIImageModel,
   type OpenAIImageQuality,
@@ -106,6 +109,28 @@ const qualityLabels: Record<OpenAIImageQuality, string> = {
   medium: 'Équilibrée',
   high: 'Soignée (plus lente et plus chère)',
 };
+export const geminiModelOptions: Record<GeminiImageModel, { name: string; summary: string }> = {
+  'gemini-nano-banana-2.1': {
+    name: 'Nano Banana 2.1',
+    summary: 'Modèle Gemini récent, rapide et polyvalent (conseillé)',
+  },
+  'gemini-3.1-flash-lite-image': {
+    name: 'Nano Banana 2 Lite',
+    summary: 'Optimisé pour la rapidité et le coût réduit',
+  },
+  'gemini-3.1-flash-image': {
+    name: 'Nano Banana 2',
+    summary: 'Bon équilibre entre rapidité et qualité',
+  },
+  'gemini-3-pro-image': {
+    name: 'Nano Banana Pro',
+    summary: 'Pour les images complexes, les détails et le texte',
+  },
+  'gemini-2.5-flash-image': {
+    name: 'Gemini 2.5 Flash Image (ancien)',
+    summary: 'Ancienne génération ; disponibilité selon Google',
+  },
+};
 const providers: {
   id: ImageGenerationProvider;
   name: string;
@@ -124,6 +149,12 @@ const providers: {
     summary: 'Rien à installer, utilise la clé OpenAI de Cornelius. Chaque image est facturée.',
     icon: Cloud,
   },
+  {
+    id: 'gemini',
+    name: 'Avec Gemini',
+    summary: 'Rien à installer, utilise la clé Gemini de Cornelius. Accès et quota selon Google.',
+    icon: Cloud,
+  },
 ];
 
 /** Où créer les images : sur ce PC ou par l’API d’images d’OpenAI. */
@@ -139,7 +170,7 @@ function ProviderChoice({
   return (
     <fieldset className="space-y-2" disabled={disabled}>
       <legend className="text-sm font-medium">Où créer les images</legend>
-      <div className="grid gap-2 sm:grid-cols-2">
+      <div className="grid gap-2 sm:grid-cols-3">
         {providers.map((provider) => {
           const Icon = provider.icon;
           return (
@@ -283,6 +314,89 @@ function OpenAISteps({
   );
 }
 
+/** Mise en place avec Gemini : la clé, le modèle autorisé par Google, puis l’activation. */
+function GeminiSteps({
+  generation,
+  run,
+  toggles,
+}: {
+  generation: ImageGenerationStatus;
+  run: RunAction;
+  toggles: ReactNode;
+}) {
+  const unavailable = generation.geminiUnavailable;
+  const model = generation.geminiModel ?? GEMINI_IMAGE_MODEL_DEFAULT;
+  return (
+    <SetupSteps label="Mise en place de la génération d’image avec Gemini">
+      <SetupStep number={1} title="Clé Gemini" done={!unavailable}>
+        {unavailable ? (
+          <p className="flex items-start gap-2 text-sm">
+            <TriangleAlert className="mt-0.5 size-4 shrink-0 text-amber-300" aria-hidden="true" />
+            <span>
+              {unavailable}{' '}
+              <a className="font-medium text-primary underline underline-offset-4" href="#start">
+                Renseigner la clé dans la mise en route
+              </a>
+            </span>
+          </p>
+        ) : (
+          <p className="flex items-center gap-2 text-sm">
+            <CheckCircle2 className="size-4 text-primary" aria-hidden="true" />
+            La clé Gemini de Cornelius sert aussi à la conversation.
+          </p>
+        )}
+      </SetupStep>
+      <SetupStep number={2} title="Choisir le modèle Gemini" done>
+        <div className="space-y-2">
+          <Label htmlFor="gemini-image-model">Modèle</Label>
+          <NativeSelect
+            id="gemini-image-model"
+            wrapperClassName="w-full"
+            className="w-full"
+            value={model}
+            disabled={generation.busy}
+            onChange={(event) => {
+              const geminiModel = event.target.value as GeminiImageModel;
+              void run(
+                'Modèle « ' + geminiModelOptions[geminiModel].name + ' » utilisé.',
+                () => api.imageGeneration({ geminiModel }),
+                { key: 'image-generation-gemini', payload: { geminiModel } },
+              );
+            }}
+          >
+            {GEMINI_IMAGE_MODELS.map((id) => (
+              <NativeSelectOption key={id} value={id}>
+                {geminiModelOptions[id].name}
+              </NativeSelectOption>
+            ))}
+          </NativeSelect>
+          <p className="text-xs text-muted-foreground">{geminiModelOptions[model].summary}.</p>
+          <p className="text-xs text-muted-foreground">
+            L’accès gratuit n’est pas garanti pour ces modèles. Google applique les quotas, tarifs
+            et autorisations de facturation du projet associé à la clé ; consultez{' '}
+            <a
+              className="font-medium text-primary underline underline-offset-4"
+              href="https://ai.google.dev/gemini-api/docs/pricing"
+              target="_blank"
+              rel="noreferrer"
+            >
+              les tarifs Gemini
+            </a>
+            . Cornelius ne bascule pas vers un autre fournisseur en cas de refus.
+          </p>
+          <p className="text-xs text-muted-foreground">
+            Les illustrations automatiques utilisent elles aussi le quota Gemini et peuvent être
+            facturées.
+          </p>
+        </div>
+      </SetupStep>
+      <SetupStep number={3} title="Activer" done={generation.enabled && !unavailable}>
+        {toggles}
+      </SetupStep>
+    </SetupSteps>
+  );
+}
+
 /** Outils de calcul (Python, PyTorch, Diffusers) installés avec le premier modèle. */
 const environmentGb = 4;
 
@@ -345,8 +459,9 @@ export function ImageGenerationSettings({
     });
   const provider = generation?.provider ?? 'local';
   const openai = provider === 'openai';
-  // Avec OpenAI, rien à installer : seuls la clé et l’activation comptent.
-  const ready = openai || currentInstalled;
+  const gemini = provider === 'gemini';
+  // Avec les fournisseurs en ligne, rien à installer : seuls la clé et l’activation comptent.
+  const ready = openai || gemini || currentInstalled;
   const enabledSwitch = (
     <div className="flex items-center justify-between gap-4">
       <div className="space-y-1">
@@ -407,11 +522,15 @@ export function ImageGenerationSettings({
           ? 'OpenAI · ' +
             openaiModelOptions[generation.openaiModel ?? OPENAI_IMAGE_MODEL_DEFAULT].name +
             (generation.openaiUnavailable ? ' · clé à vérifier' : '')
-          : generation
-            ? 'Modèle ' +
-              optionOf(current).tier.toLocaleLowerCase('fr') +
-              (currentInstalled ? '' : ' · à installer')
-            : 'Images créées sur ce PC'
+          : generation && gemini
+            ? 'Gemini · ' +
+              geminiModelOptions[generation.geminiModel ?? GEMINI_IMAGE_MODEL_DEFAULT].name +
+              (generation.geminiUnavailable ? ' · clé à vérifier' : '')
+            : generation
+              ? 'Modèle ' +
+                optionOf(current).tier.toLocaleLowerCase('fr') +
+                (currentInstalled ? '' : ' · à installer')
+              : 'Images créées sur ce PC'
       }
       badge={
         <Badge variant={generation?.enabled ? 'secondary' : 'outline'}>
@@ -424,7 +543,9 @@ export function ImageGenerationSettings({
       <p className="text-sm text-muted-foreground">
         {openai
           ? 'Créer une image à la voix : Cornelius envoie votre description à OpenAI, qui crée une image carrée affichée ensuite sur le miroir. Chaque image est facturée sur votre compte OpenAI.'
-          : 'Créer une image à la voix : Cornelius dessine sur ce PC une image carrée à partir de votre description, puis l’affiche sur le miroir. La description et l’image ne sont envoyées à aucun service d’image en ligne.'}
+          : gemini
+            ? 'Créer une image à la voix : Cornelius envoie votre description à Gemini, qui renvoie une image carrée affichée ensuite sur le miroir. L’accès et un éventuel coût dépendent du modèle, du quota et de la facturation Google.'
+            : 'Créer une image à la voix : Cornelius dessine sur ce PC une image carrée à partir de votre description, puis l’affiche sur le miroir. La description et l’image ne sont envoyées à aucun service d’image en ligne.'}
       </p>
       <ProviderChoice
         value={provider}
@@ -433,7 +554,9 @@ export function ImageGenerationSettings({
           void run(
             next === 'openai'
               ? 'Les images seront créées par OpenAI.'
-              : 'Les images seront créées sur ce PC.',
+              : next === 'gemini'
+                ? 'Les images seront créées par Gemini ; un quota ou une facturation Google peut s’appliquer.'
+                : 'Les images seront créées sur ce PC.',
             () => api.imageGeneration({ provider: next }),
             { key: 'image-generation-provider', payload: { provider: next } },
           )
@@ -441,6 +564,17 @@ export function ImageGenerationSettings({
       />
       {openai && generation ? (
         <OpenAISteps
+          generation={generation}
+          run={run}
+          toggles={
+            <>
+              {enabledSwitch}
+              {illustrateSwitch}
+            </>
+          }
+        />
+      ) : gemini && generation ? (
+        <GeminiSteps
           generation={generation}
           run={run}
           toggles={
@@ -647,8 +781,8 @@ export function ImageGenerationSettings({
       <TechnicalDetails>
         <div className="flex flex-wrap gap-2">
           <Badge variant="outline">
-            {openai
-              ? 'Images créées par OpenAI'
+            {openai || gemini
+              ? `Images créées par ${openai ? 'OpenAI' : 'Gemini'}`
               : generation?.connected
                 ? 'Générateur connecté'
                 : currentInstalled && generation?.enabled
@@ -682,8 +816,10 @@ export function ImageGenerationSettings({
         </ul>
         <p className="text-xs text-muted-foreground">
           Avec OpenAI : image demandée en 1024 × 1024 (WebP) à l’API d’images, avec la clé OpenAI de
-          Cornelius ; la description part chez OpenAI, le générateur local reste arrêté. Sur ce PC :
-          les images sont enregistrées en WebP 512 × 512. SDXL Turbo calcule directement en 512 ×
+          Cornelius ; la description part chez OpenAI. Avec Gemini : image PNG 1024 × 1024 envoyée
+          avec la clé Gemini de Cornelius ; la description part chez Google et l’accès dépend des
+          droits et quotas du projet. Dans les deux cas, le générateur local reste arrêté. Sur ce PC
+          : les images sont enregistrées en WebP 512 × 512. SDXL Turbo calcule directement en 512 ×
           512 ; SANA-Sprint et Z-Image calculent en 1024 × 1024 puis réduisent l’image. SANA-Sprint
           est sous licence Apache 2.0. SDXL Turbo utilise la licence communautaire Stability AI, à
           vérifier pour un usage commercial. L’installation crée l’environnement Python .venv-image,

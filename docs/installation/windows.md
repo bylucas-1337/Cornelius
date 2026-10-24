@@ -9,7 +9,7 @@ Cette page explique comment installer Cornelius sur un ordinateur Windows 10 ou 
 - [Python](https://www.python.org/downloads/windows/) 3.12, installé depuis python.org avec le lanceur `py` (proposé par l’installateur). Dans la liste, prenez une version 3.12 qui propose un « Windows installer (64-bit) ». Vérifiez avec `py -3.12 --version`. C’est la version validée pour Cornelius, et la seule pour laquelle AMD publie PyTorch sous Windows.
 - [Git pour Windows](https://git-scm.com/download/win).
 - Une webcam, un micro, des haut-parleurs et un navigateur récent (Google Chrome ou Microsoft Edge).
-- Une clé OpenAI d’un compte payant : sans elle, Cornelius ne peut pas parler.
+- Une clé Gemini (prioritaire) ou OpenAI : sans clé, Cornelius ne peut pas parler. Les limites et modèles gratuits de Gemini dépendent du compte.
 - En option : une carte graphique (voir [GPU](gpu.md)), un jeton Météo Concept et un jeton PRIM pour les modules Météo et Transports.
 
 Ouvrez PowerShell après avoir installé ces logiciels, pour qu’il les trouve.
@@ -25,8 +25,8 @@ notepad .env
 ```
 
 - `npm ci` installe les dépendances exactes du projet.
-- `npm run setup` crée le fichier `.env` : le port (`PORT=3000`), la base de données, le mot de passe de l’administration (`cornelius` au départ), un jeton privé pour la perception et une ligne `OPENAI_API_KEY=` vide. Sur un `.env` existant, il ne change rien et complète seulement les lignes manquantes.
-- Dans le Bloc-notes, choisissez un autre mot de passe dans `CORNELIUS_ADMIN_PASSWORD` (4 caractères au moins), puis enregistrez. La clé OpenAI peut se coller ici après `OPENAI_API_KEY=`, ou plus tard dans l’administration (**Mise en route → Clés et jetons**), sans redémarrage.
+- `npm run setup` crée le fichier `.env` : le port (`PORT=3000`), la base de données, le mot de passe de l’administration (`cornelius` au départ), un jeton privé pour la perception et les lignes vides `GEMINI_API_KEY=` et `OPENAI_API_KEY=`. Sur un `.env` existant, il complète seulement les lignes manquantes.
+- Dans le Bloc-notes, choisissez un autre mot de passe dans `CORNELIUS_ADMIN_PASSWORD` (4 caractères au moins), puis enregistrez. La clé Gemini est prioritaire ; collez-la après `GEMINI_API_KEY=` ou dans l’administration (**Mise en route → Clés et jetons**). Elle peut aussi servir aux images Gemini si le projet Google associé y a accès. OpenAI reste une option de secours et peut aussi servir à ses propres images. Les changements dans `.env` nécessitent un redémarrage.
 
 Les autres réglages possibles de `.env` (jetons des modules, caméra, vision, images) sont décrits dans [Configuration](../reference/configuration.md) et commentés dans `.env.example`.
 
@@ -136,7 +136,7 @@ Les problèmes s’affichent en jaune, précédés de « AVERTISSEMENT : » (« 
 | Node.js … détecté : Cornelius demande Node.js 24.2 ou plus récent | La version de Node.js est trop ancienne. | Installez Node.js 24.2 ou une version 24 plus récente. |
 | Dépendances absentes, incomplètes ou à mettre à jour : installation (npm ci) | `node_modules` manque, est incomplet (un `npm ci` interrompu ou gêné par un fichier ouvert) ou date d’avant un `git pull`. | Rien : le script arrête Cornelius et réinstalle tout seul. |
 | L’installation des dépendances a échoué (npm ci, code …) | `npm ci` n’a pas pu terminer, souvent parce qu’un fichier de `node_modules` est ouvert ailleurs. | Fermez l’éditeur et les autres terminaux ouverts sur le projet, supprimez le dossier `node_modules`, puis relancez `start.ps1`. |
-| Fichier .env absent : lancez « npm run setup » | La configuration n’a pas été créée. | Lancez `npm run setup`, puis renseignez la clé OpenAI. |
+| Fichier .env absent : lancez « npm run setup » | La configuration n’a pas été créée. | Lancez `npm run setup`, puis renseignez une clé Gemini ou OpenAI. |
 | Cornelius ne peut pas démarrer : corrigez les points ci-dessus puis relancez. | Résumé des messages précédents. | Corrigez chaque point listé au-dessus. |
 | npm est introuvable dans le PATH. | L’interface doit être compilée, mais npm manque. | Réinstallez Node.js (npm est fourni avec). |
 | La compilation a échoué (code …). | La compilation de l’interface a rencontré une erreur. | Relancez `npm ci`, puis `start.ps1 -Build`. Le détail est affiché juste au-dessus. |

@@ -1,6 +1,7 @@
 import OpenAI from 'openai';
 import schema from '../schemas/memory-changes.schema.json' with { type: 'json' };
 import { strictSchema } from './live/configuration.js';
+import { sanitizeGeminiSchema } from './gemini-schema.js';
 import type { MemoryExtractor } from './memory.js';
 
 export const memoryExtractionInstructions = `Extrais la mémoire personnelle de Cornelius après une conversation.
@@ -39,5 +40,45 @@ export function createMemoryExtractor(
     if (response.status !== 'completed' || !response.output_text)
       throw new Error('Extraction incomplète.');
     return JSON.parse(response.output_text) as unknown;
+  };
+}
+
+export function createGeminiMemoryExtractor(
+  apiKey: string,
+  fetchImpl: typeof globalThis.fetch = globalThis.fetch,
+): MemoryExtractor {
+  return async (input, signal) => {
+    const url =
+      'https://generativelanguage.googleapis.com/v1beta/models/gemini-3.5-flash-lite:generateContent';
+    const response = await fetchImpl(url, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'x-goog-api-key': apiKey },
+      body: JSON.stringify({
+        systemInstruction: {
+          parts: [{ text: memoryExtractionInstructions }],
+        },
+        contents: [
+          {
+            role: 'user',
+            parts: [{ text: JSON.stringify(input) }],
+          },
+        ],
+        generationConfig: {
+          responseMimeType: 'application/json',
+          responseSchema: sanitizeGeminiSchema(schema),
+          maxOutputTokens: 6000,
+        },
+      }),
+      signal,
+    });
+    if (!response.ok) {
+      throw new Error(`Extraction Gemini impossible (${response.status}).`);
+    }
+    const data = (await response.json()) as {
+      candidates?: Array<{ content?: { parts?: Array<{ text?: string }> } }>;
+    };
+    const text = data?.candidates?.[0]?.content?.parts?.[0]?.text;
+    if (!text) throw new Error('Extraction incomplète.');
+    return JSON.parse(text) as unknown;
   };
 }

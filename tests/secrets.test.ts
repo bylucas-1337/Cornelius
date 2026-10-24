@@ -54,8 +54,10 @@ test('la clé OpenAI se saisit dans l’administration et compte sans redémarra
   const list = await f.app.inject({ url: '/api/admin/secrets', headers: f.headers });
   assert.equal(list.statusCode, 200);
   const before = list.json().secrets;
-  assert.equal(before[0].env, 'OPENAI_API_KEY');
-  assert.equal(before[0].configured, false);
+  const geminiBefore = before.find((secret: { env: string }) => secret.env === 'GEMINI_API_KEY');
+  const openaiBefore = before.find((secret: { env: string }) => secret.env === 'OPENAI_API_KEY');
+  assert.equal(geminiBefore?.configured, false);
+  assert.equal(openaiBefore?.configured, false);
   assert.equal(f.controller.snapshot().state.setup?.openaiKey, false);
 
   const saved = await f.app.inject({
@@ -65,7 +67,10 @@ test('la clé OpenAI se saisit dans l’administration et compte sans redémarra
     payload: { value: `  ${openaiKey}  ` },
   });
   assert.equal(saved.statusCode, 200, saved.body);
-  const openai = saved.json().secrets[0];
+  const openai = saved
+    .json()
+    .secrets.find((secret: { env: string }) => secret.env === 'OPENAI_API_KEY');
+  assert.ok(openai);
   assert.deepEqual(
     { configured: openai.configured, source: openai.source, hint: openai.hint },
     { configured: true, source: 'admin', hint: 'abcd' },
@@ -83,15 +88,22 @@ test('la clé OpenAI se saisit dans l’administration et compte sans redémarra
     url: '/api/admin/secrets/OPENAI_API_KEY',
     headers: f.headers,
   });
-  assert.equal(removed.json().secrets[0].configured, false);
+  assert.equal(
+    removed.json().secrets.find((secret: { env: string }) => secret.env === 'OPENAI_API_KEY')
+      .configured,
+    false,
+  );
   assert.equal(f.controller.snapshot().state.setup?.openaiKey, false);
 });
 
 test('une clé de .env reste la valeur de secours, une clé saisie passe avant', async (t) => {
   const f = await fixture(t, { openaiKey: 'sk-from-env-file-wxyz' });
   const list = (await f.app.inject({ url: '/api/admin/secrets', headers: f.headers })).json();
-  assert.equal(list.secrets[0].source, 'env');
-  assert.equal(list.secrets[0].hint, 'wxyz');
+  const openaiSecret = list.secrets.find(
+    (secret: { env: string }) => secret.env === 'OPENAI_API_KEY',
+  );
+  assert.equal(openaiSecret.source, 'env');
+  assert.equal(openaiSecret.hint, 'wxyz');
   await f.app.inject({
     method: 'PUT',
     url: '/api/admin/secrets/OPENAI_API_KEY',
@@ -103,7 +115,73 @@ test('une clé de .env reste la valeur de secours, une clé saisie passe avant',
     url: '/api/admin/secrets/OPENAI_API_KEY',
     headers: f.headers,
   });
-  assert.equal(removed.json().secrets[0].source, 'env');
+  assert.equal(
+    removed.json().secrets.find((secret: { env: string }) => secret.env === 'OPENAI_API_KEY')
+      .source,
+    'env',
+  );
+});
+
+test('Gemini est le fournisseur de conversation prioritaire et se configure sans OpenAI', async (t) => {
+  const f = await fixture(t);
+  const saved = await f.app.inject({
+    method: 'PUT',
+    url: '/api/admin/secrets/GEMINI_API_KEY',
+    headers: f.headers,
+    payload: { value: 'gemini-test-key-0123456789' },
+  });
+  assert.equal(saved.statusCode, 200, saved.body);
+  const gemini = saved
+    .json()
+    .secrets.find((secret: { env: string }) => secret.env === 'GEMINI_API_KEY');
+  assert.equal(gemini.configured, true);
+  assert.ok(!saved.body.includes('gemini-test-key-0123456789'));
+  assert.equal(f.controller.snapshot().state.setup?.openaiKey, true);
+  const devices = await f.app.inject({ url: '/api/admin/devices', headers: f.headers });
+  assert.equal(devices.json().apiConfigured, true);
+});
+
+test('la clé Tavily se configure dans l’administration sans divulguer sa valeur', async (t) => {
+  const f = await fixture(t);
+  const before = (await f.app.inject({ url: '/api/admin/secrets', headers: f.headers })).json();
+  const tavilyBefore = before.secrets.find(
+    (secret: { env: string }) => secret.env === 'TAVILY_API_KEY',
+  );
+  assert.ok(tavilyBefore);
+  const fallback = { configured: tavilyBefore.configured, source: tavilyBefore.source };
+
+  const value = 'tavily-test-key-0123456789';
+  const saved = await f.app.inject({
+    method: 'PUT',
+    url: '/api/admin/secrets/TAVILY_API_KEY',
+    headers: f.headers,
+    payload: { value },
+  });
+  assert.equal(saved.statusCode, 200, saved.body);
+  assert.ok(!saved.body.includes(value));
+  assert.deepEqual(
+    saved.json().secrets.find((secret: { env: string }) => secret.env === 'TAVILY_API_KEY'),
+    {
+      env: 'TAVILY_API_KEY',
+      configured: true,
+      source: 'admin',
+      hint: '6789',
+      label: 'Clé Tavily pour la recherche web',
+      usedBy: 'Recherche web avec Gemini si Tavily est activé',
+      url: 'https://app.tavily.com/home',
+      note: '1 000 crédits gratuits par mois',
+    },
+  );
+
+  const removed = await f.app.inject({
+    method: 'DELETE',
+    url: '/api/admin/secrets/TAVILY_API_KEY',
+    headers: f.headers,
+  });
+  const afterRemoval = removed
+    .json()
+    .secrets.find((secret: { env: string }) => secret.env === 'TAVILY_API_KEY');
+  assert.deepEqual({ configured: afterRemoval.configured, source: afterRemoval.source }, fallback);
 });
 
 test('jetons des modules : saisis dans l’administration, lus par le module', async (t) => {

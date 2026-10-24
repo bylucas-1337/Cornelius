@@ -4,7 +4,7 @@ Cette page liste tout ce qui se règle hors de l’administration : les variable
 
 ## Le fichier `.env`
 
-Le fichier `.env` se trouve à la racine du projet. `npm run setup` le crée avec cinq lignes : `PORT`, `CORNELIUS_DATABASE`, `CORNELIUS_ADMIN_PASSWORD`, `CORNELIUS_PERCEPTION_TOKEN` (tiré au hasard) et `OPENAI_API_KEY` (vide). Relancé sur un fichier existant, il le garde, ajoute seulement le mot de passe, le jeton de la perception ou la ligne de la clé OpenAI s’ils manquent, et retire d’anciennes lignes devenues inutiles.
+Le fichier `.env` se trouve à la racine du projet. `npm run setup` le crée avec les réglages du serveur, un mot de passe administrateur, un jeton de perception tiré au hasard et les lignes vides `GEMINI_API_KEY` et `OPENAI_API_KEY`. Relancé sur un fichier existant, il le garde et ajoute seulement les champs manquants.
 
 Le modèle `.env.example` décrit les autres lignes possibles. Copiez celles qui vous servent dans `.env`. Une ligne absente ou commentée (`#`) garde la valeur par défaut.
 
@@ -28,7 +28,8 @@ Ne publiez jamais ce fichier : il contient le mot de passe et les clés. Il est 
 
 | Variable | Défaut | Effet | Lue par |
 |---|---|---|---|
-| `OPENAI_API_KEY` | vide | Clé de l’API OpenAI, valeur de secours : une clé saisie dans **Mise en route → Clés et jetons** passe avant. Sans clé, aucune conversation ne s’ouvre et la mémoire ne retient rien. La rubrique **Mise en route** affiche alors l’étape **Clé OpenAI** à faire. | serveur |
+| `GEMINI_API_KEY` | vide | Clé Gemini Live pour la conversation, Gemini pour la mémoire et, si choisi, la génération d’images Gemini. Prioritaire sur OpenAI ; une clé saisie dans l’administration passe avant celle du fichier. Accès, quotas gratuits et tarifs des modèles d’image varient selon le compte Google. | serveur |
+| `OPENAI_API_KEY` | vide | Secours pour la conversation et la mémoire si Gemini n’est pas configuré ; sert aussi aux images OpenAI. Une clé saisie dans **Mise en route → Clés et jetons** passe avant celle du fichier. | serveur |
 | `CORNELIUS_ADMIN_PASSWORD` | `cornelius` (écrit par `npm run setup`) | Mot de passe de départ de l’administration, 4 caractères au moins. Un mot de passe choisi dans **Mise en route** le remplace (seule son empreinte est gardée en base). Le serveur refuse de démarrer sans lui. Tant qu’il vaut `cornelius`, la **Mise en route** demande de le changer. | serveur |
 | `CORNELIUS_LOGIN_RATE_LIMIT` | `10` | Nombre de tentatives de connexion à l’administration permises par minute. Entier de 1 ou plus. | serveur |
 

@@ -33,6 +33,11 @@ const imageModelLabels: Record<string, string> = {
   'gpt-image-2.5-flare': 'OpenAI · GPT Image 2.5 Flare',
   'gpt-image-2.5-sunburst': 'OpenAI · GPT Image 2.5 Sunburst',
   'gpt-image-1-mini': 'OpenAI · GPT Image 1 mini',
+  'gemini-nano-banana-2.1': 'Gemini · Nano Banana 2.1',
+  'gemini-3.1-flash-lite-image': 'Gemini · Nano Banana 2 Lite',
+  'gemini-3.1-flash-image': 'Gemini · Nano Banana 2',
+  'gemini-3-pro-image': 'Gemini · Nano Banana Pro',
+  'gemini-2.5-flash-image': 'Gemini · 2.5 Flash Image',
 };
 
 const installationLabels: Record<string, string> = {
@@ -257,7 +262,11 @@ export function Diagnostics({
                       {installationLabels[installation?.state ?? 'missing'] ?? installation?.state}
                     </Badge>
                     <Badge variant={generation.connected ? 'secondary' : 'outline'}>
-                      {generation.connected ? 'Service d’images lancé' : 'Service d’images arrêté'}
+                      {generation.provider === 'local'
+                        ? generation.connected
+                          ? 'Service d’images lancé'
+                          : 'Service d’images arrêté'
+                        : `API ${generation.provider === 'gemini' ? 'Gemini' : 'OpenAI'}`}
                     </Badge>
                     {generation.busy && <Badge variant="default">Génération en cours</Badge>}
                   </div>
@@ -269,7 +278,9 @@ export function Diagnostics({
                           generation.provider === 'openai'
                             ? (imageModelLabels[generation.openaiModel] ?? generation.openaiModel) +
                               ` (qualité ${generation.openaiQuality})`
-                            : (imageModelLabels[generation.model] ?? generation.model),
+                            : generation.provider === 'gemini'
+                              ? (imageModelLabels[generation.geminiModel] ?? generation.geminiModel)
+                              : (imageModelLabels[generation.model] ?? generation.model),
                         ],
                         [
                           'Modèle chargé',
@@ -281,9 +292,11 @@ export function Diagnostics({
                           'Calcul de l’image',
                           generation.provider === 'openai'
                             ? '1024 × 1024 · API d’images OpenAI'
-                            : generation.model === 'sana-sprint-0.6b'
-                              ? `1024 × 1024 · ${generation.sanaSteps} étapes → 512 × 512`
-                              : '512 × 512',
+                            : generation.provider === 'gemini'
+                              ? '1024 × 1024 · API Gemini'
+                              : generation.model === 'sana-sprint-0.6b'
+                                ? `1024 × 1024 · ${generation.sanaSteps} étapes → 512 × 512`
+                                : '512 × 512',
                         ],
                         [
                           'Périphérique',

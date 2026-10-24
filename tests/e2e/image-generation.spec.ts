@@ -327,8 +327,9 @@ test('image avec OpenAI : rien à installer, la clé est signalée, modèle et q
   const panel = page.locator('#module-image-generation');
   await expect(panel.getByRole('radio', { name: 'Sur ce PC' })).toBeChecked();
   try {
-    await panel.getByRole('radio', { name: 'Avec OpenAI' }).check();
-    await expect(panel.getByRole('radio', { name: 'Avec OpenAI' })).toBeChecked();
+    const openAI = panel.getByRole('radio', { name: 'Avec OpenAI' });
+    await openAI.click();
+    await expect(openAI).toBeChecked();
     // Le serveur de test n’a pas de clé : l’étape le dit, sans installation proposée.
     await expect(panel.getByText('Clé OpenAI absente', { exact: false })).toBeVisible();
     await expect(panel.getByRole('button', { name: /Installer/ })).toHaveCount(0);

@@ -365,7 +365,29 @@ export const migrations: readonly string[] = [
   INSERT OR IGNORE INTO image_generation_provider (id) VALUES (1);`,
   // Satellites audio : micro et haut-parleur d’une autre pièce, associés dans l’administration.
   satellitesMigration,
+  `CREATE TABLE image_generation_provider_v2 (
+    id INTEGER PRIMARY KEY CHECK (id = 1),
+    provider TEXT NOT NULL DEFAULT 'local' CHECK (provider IN ('local', 'openai', 'gemini')),
+    openai_model TEXT NOT NULL DEFAULT 'gpt-image-2.5-flare',
+    openai_quality TEXT NOT NULL DEFAULT 'low',
+    gemini_model TEXT NOT NULL DEFAULT 'gemini-nano-banana-2.1'
+  ) STRICT;
+  INSERT INTO image_generation_provider_v2 (id, provider, openai_model, openai_quality)
+    SELECT id, provider, openai_model, openai_quality FROM image_generation_provider;
+  DROP TABLE image_generation_provider;
+  ALTER TABLE image_generation_provider_v2 RENAME TO image_generation_provider;`,
+  `ALTER TABLE conversation_preferences ADD COLUMN gemini_tavily_enabled INTEGER NOT NULL DEFAULT 1
+    CHECK (gemini_tavily_enabled IN (0, 1));`,
 ];
+
+function applyMigration(db: DatabaseSync, migration: string): void {
+  const addition = /^\s*ALTER TABLE ([a-z_]\w*) ADD COLUMN ([a-z_]\w*)\b/i.exec(migration);
+  if (addition) {
+    const columns = db.prepare(`PRAGMA table_info(${addition[1]})`).all() as { name: string }[];
+    if (columns.some(({ name }) => name === addition[2])) return;
+  }
+  db.exec(migration);
+}
 
 /** The server owns this connection. Backups include WAL changes via SQLite itself. */
 export function openDatabase(path: string): DatabaseSync {
@@ -392,7 +414,7 @@ export function openDatabase(path: string): DatabaseSync {
       db.exec('BEGIN IMMEDIATE');
       try {
         for (let index = version; index < migrations.length; index++) {
-          db.exec(migrations[index]!);
+          applyMigration(db, migrations[index]!);
           db.exec(`PRAGMA user_version = ${index + 1}`);
         }
         db.exec('COMMIT');
@@ -657,6 +679,18 @@ export class SessionPreferences {
   setWebSearchEnabled(enabled: boolean): void {
     this.db
       .prepare('UPDATE conversation_preferences SET web_search = ? WHERE id = 1')
+      .run(Number(enabled));
+  }
+  getGeminiTavilyEnabled(): boolean {
+    return (
+      this.db
+        .prepare('SELECT gemini_tavily_enabled FROM conversation_preferences WHERE id = 1')
+        .get()?.gemini_tavily_enabled !== 0
+    );
+  }
+  setGeminiTavilyEnabled(enabled: boolean): void {
+    this.db
+      .prepare('UPDATE conversation_preferences SET gemini_tavily_enabled = ? WHERE id = 1')
       .run(Number(enabled));
   }
   getGreetingMode(): GreetingMode {

@@ -153,11 +153,14 @@ test('engagement stabilisé : une seule session réservée, prête après les de
 
 test('un transport indisponible bloque l’ouverture sans démarrer de session', (t) => {
   const f = fixture(t);
-  f.transport.reason = 'Connexions OpenAI bloquées dans l’administration.';
+  f.transport.reason = 'Connexions au fournisseur d’IA bloquées dans l’administration.';
   f.engage();
   f.controller.command({ type: 'start' });
   assert.equal(f.state().session.phase, 'blocked');
-  assert.equal(f.state().session.reason, 'Connexions OpenAI bloquées dans l’administration.');
+  assert.equal(
+    f.state().session.reason,
+    'Connexions au fournisseur d’IA bloquées dans l’administration.',
+  );
   assert.equal(f.transport.opened.length, 0);
 });
 
@@ -1485,6 +1488,7 @@ test('personnes reconnues : activer l’option ferme une conversation anonyme et
 test('recherche web et accueil : réglages persistants, la recherche rouvre la session active', (t) => {
   const f = fixture(t);
   assert.equal(f.state().webSearchEnabled, true);
+  assert.equal(f.state().geminiTavilyEnabled, true);
   assert.equal(f.state().greeting, 'name');
   f.engage([f.alice.id]);
   f.ready();
@@ -1495,7 +1499,13 @@ test('recherche web et accueil : réglages persistants, la recherche rouvre la s
   assert.equal(f.state().session.reason, 'Recherche web modifiée.');
   assert.ok(f.state().session.contextVersion > before);
   f.acknowledgeClose();
-  assert.equal(f.transport.opened.length, 2);
+  f.controller.setGeminiTavilyEnabled(false);
+  assert.equal(f.state().geminiTavilyEnabled, false);
+  assert.equal(f.state().session.phase, 'closing');
+  assert.equal(f.state().session.reason, 'Moteur de recherche Gemini modifié.');
+  assert.equal(new SessionPreferences(f.db).getGeminiTavilyEnabled(), false);
+  f.acknowledgeClose();
+  assert.equal(f.transport.opened.length, 3);
   f.controller.setGreetingMode('free');
   assert.throws(() => f.controller.setGreetingMode('salut' as never), /Accueil invalide/);
   const restarted = new SessionController(

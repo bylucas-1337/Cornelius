@@ -129,6 +129,38 @@ test('le miroir est public et les droits administrateur restent protégés', asy
   assert.equal(f.profiles.list().length, 0);
 });
 
+test('le moteur de recherche web de Gemini se règle sans exposer de secret', async (t) => {
+  const f = await fixture(t);
+  const headers = { origin, cookie: await f.login() };
+  const state = await f.app.inject({ url: '/api/state' });
+  assert.equal(state.json().state.geminiTavilyEnabled, true);
+
+  const invalid = await f.app.inject({
+    method: 'PATCH',
+    url: '/api/admin/web-search/gemini-tavily',
+    headers,
+    payload: { enabled: 'false' },
+  });
+  assert.equal(invalid.statusCode, 400);
+
+  const disabled = await f.app.inject({
+    method: 'PATCH',
+    url: '/api/admin/web-search/gemini-tavily',
+    headers,
+    payload: { enabled: false },
+  });
+  assert.equal(disabled.statusCode, 200);
+  assert.equal(disabled.json().state.geminiTavilyEnabled, false);
+
+  const unauthenticated = await f.app.inject({
+    method: 'PATCH',
+    url: '/api/admin/web-search/gemini-tavily',
+    headers: { origin },
+    payload: { enabled: true },
+  });
+  assert.equal(unauthenticated.statusCode, 401);
+});
+
 test('l’état diffusé dit ce qui manque au premier lancement sans exposer aucun secret', async (t) => {
   const first = await fixture(t, { openaiKey: undefined, adminPassword: 'cornelius' });
   const firstState = await first.app.inject({ url: '/api/state' });

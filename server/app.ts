@@ -1,4 +1,4 @@
-import { isCardSettings } from '../shared/cards.js';
+﻿import { isCardSettings } from '../shared/cards.js';
 import { isLiveVoice } from '../shared/voices.js';
 import { isOrbScale, ORB_SCALE_MAX, ORB_SCALE_MIN } from '../shared/display.js';
 import { AdminPassword, newPasswordError } from './admin-password.js';
@@ -17,7 +17,7 @@ import { tmpdir } from 'node:os';
 import { DiagnosticLog } from './logs.js';
 import { MemoryRepository } from './memory-store.js';
 import { PersonalMemory, type MemoryExtractor } from './memory.js';
-import { createMemoryExtractor } from './memory-extractor.js';
+import { createMemoryExtractor, createGeminiMemoryExtractor } from './memory-extractor.js';
 import { registerMemory } from './memory-api.js';
 import { PersonalDataEraser } from './backups.js';
 import { createHash, randomBytes, timingSafeEqual } from 'node:crypto';
@@ -44,6 +44,7 @@ import { SessionController } from './controller.js';
 import { DEFAULT_ADMIN_PASSWORD, type AppConfig } from './config.js';
 import { LiveTransport } from './live/transport.js';
 import { createLiveGateway } from './live/gateway.js';
+import { createGeminiLiveGateway } from './live/gemini-gateway.js';
 import { PerceptionBridge } from './perception.js';
 import { ModelDownloads, type ModelLauncher } from './model-downloads.js';
 import { VisionBridge } from './vision.js';
@@ -68,6 +69,7 @@ import { Agents } from './agents.js';
 import { registerAgents } from './agents-api.js';
 import { ImageGeneration } from './image-generation.js';
 import { createOpenAIImageCreator, type OpenAIImageCreator } from './openai-images.js';
+import { createGeminiImageCreator, type GeminiImageCreator } from './gemini-images.js';
 import {
   ImageGenerationRuntime,
   type ImageInstallerLauncher,
@@ -78,14 +80,17 @@ import {
   IMAGE_GENERATION_PROVIDERS,
   OPENAI_IMAGE_MODELS,
   OPENAI_IMAGE_QUALITIES,
+  GEMINI_IMAGE_MODELS,
   type ImageGenerationModel,
   type ImageGenerationProvider,
   type OpenAIImageModel,
   type OpenAIImageQuality,
+  type GeminiImageModel,
 } from '../shared/types.js';
 
 import { PERSONALITY_MAX_LENGTH, PERSONAL_CONTEXT_MAX_LENGTH } from '../shared/personality.js';
 import { liveConfiguration } from './live/configuration.js';
+import { TavilySearch } from './tavily-search.js';
 
 type Role = 'admin' | 'kiosk';
 interface Login {
@@ -139,6 +144,8 @@ export async function createApp(
     memoryExtractor?: MemoryExtractor;
     /** Crée les images OpenAI (remplacé dans les tests, sans appel réseau). */
     openaiImageCreator?: (apiKey: string) => OpenAIImageCreator;
+    /** Crée les images Gemini (remplacé dans les tests, sans appel réseau). */
+    geminiImageCreator?: (apiKey: string) => GeminiImageCreator;
     /** Relance le serveur (fourni par server/index.ts ; absent des tests). */
     restart?: () => void;
   } = {},
@@ -153,11 +160,13 @@ export async function createApp(
     console: options.timers !== false,
     secrets: [
       config.openaiKey ?? '',
+      config.geminiKey ?? '',
       config.adminPassword,
       config.perceptionToken ?? '',
       imageGenerationToken,
       config.meteoConceptToken ?? '',
       config.primApiKey ?? '',
+      process.env.TAVILY_API_KEY ?? '',
     ],
   });
   logs.write('info', 'local', 'Démarrage du serveur');
@@ -176,11 +185,13 @@ export async function createApp(
     logs.write('warn', 'local', 'Mot de passe administrateur par défaut', {
       conseil: 'Le changer dans l’administration, Mise en route.',
     });
-  // Clé OpenAI et jetons des modules : saisis dans l’administration, sinon lus dans .env.
+  // Clés Gemini/OpenAI et jetons des modules : saisis dans l’administration, sinon lus dans .env.
   const envSecrets: Record<string, string | undefined> = {
     OPENAI_API_KEY: config.openaiKey,
+    GEMINI_API_KEY: config.geminiKey,
     CORNELIUS_METEO_CONCEPT_TOKEN: config.meteoConceptToken,
     CORNELIUS_PRIM_API_KEY: config.primApiKey,
+    TAVILY_API_KEY: process.env.TAVILY_API_KEY,
   };
   const secretStore = new SecretStore(
     db,
@@ -189,6 +200,7 @@ export async function createApp(
   );
   for (const value of secretStore.values()) logs.addSecret(value);
   const openaiKey = () => secretStore.get('OPENAI_API_KEY');
+  const geminiKey = () => secretStore.get('GEMINI_API_KEY');
   const eraser = new PersonalDataEraser(db, config.databasePath, logs);
   const preferences = new SessionPreferences(db);
   normalizeOpening(preferences);
@@ -204,10 +216,12 @@ export async function createApp(
   // Jetons déclarés par les modules : nom lu par le module, variable de .env, module.
   // Les secrets du cœur ne sont jamais prêtés à un module.
   const reservedSecrets = new Set([
+    'GEMINI_API_KEY',
     'OPENAI_API_KEY',
     'CORNELIUS_ADMIN_PASSWORD',
     'CORNELIUS_PERCEPTION_TOKEN',
     'CORNELIUS_IMAGE_GENERATION_TOKEN',
+    'TAVILY_API_KEY',
   ]);
   const addonSecrets = new Map(
     addons.flatMap((addon) =>
@@ -257,15 +271,39 @@ export async function createApp(
       : resolve('data', 'generated-images'),
   );
   const agents = new Agents(new AgentRepository(db, now), new HermesClient(http, now), now);
+  const createActiveGateway = () => {
+    const gemini = geminiKey();
+    if (gemini) return createGeminiLiveGateway(gemini, logs);
+    const oai = openaiKey();
+    if (oai) return createLiveGateway(oai, logs);
+    return null;
+  };
+
+  const createActiveMemoryExtractor = () => {
+    const gemini = geminiKey();
+    if (gemini) return createGeminiMemoryExtractor(gemini);
+    const oai = openaiKey();
+    if (oai) return createMemoryExtractor(oai);
+    return null;
+  };
+
   const initialKey = openaiKey();
+  const initialGeminiKey = geminiKey();
+  const hasInitialKey = !!(initialGeminiKey || initialKey);
   const makeImageCreator = options.openaiImageCreator ?? createOpenAIImageCreator;
   let openaiImageCreator = initialKey ? makeImageCreator(initialKey) : null;
+  const makeGeminiImageCreator = options.geminiImageCreator ?? createGeminiImageCreator;
+  let geminiImageCreator = initialGeminiKey ? makeGeminiImageCreator(initialGeminiKey) : null;
   imageGeneration.useOpenAI({
     creator: () => openaiImageCreator,
     blocked: () => preferences.getOpenAIBlocked(),
   });
+  imageGeneration.useGemini({
+    creator: () => geminiImageCreator,
+    blocked: () => preferences.getOpenAIBlocked(),
+  });
   const live = new LiveTransport(
-    initialKey ? createLiveGateway(initialKey, logs) : null,
+    createActiveGateway(),
     () => preferences.getOpenAIBlocked(),
     logs,
     {
@@ -274,23 +312,25 @@ export async function createApp(
       homeAssistant,
       agents,
       imageGeneration,
+      webSearch: new TavilySearch(() => secretStore.get('TAVILY_API_KEY'), logs),
+      geminiTavilyEnabled: () => preferences.getGeminiTavilyEnabled(),
       personality: (id) => personality.get(id),
     },
     now,
   );
   logs.write(
-    !initialKey ? 'warn' : 'info',
-    'openai',
+    !hasInitialKey ? 'warn' : 'info',
+    initialGeminiKey ? 'gemini' : 'openai',
     preferences.getOpenAIBlocked()
-      ? 'Connexions OpenAI bloquées par l’administration'
-      : initialKey
+      ? 'Connexions au fournisseur d’IA bloquées par l’administration'
+      : hasInitialKey
         ? 'Clé configurée ; connexion uniquement au démarrage d’une session'
-        : 'Clé OpenAI absente',
+        : 'Clé Gemini ou OpenAI absente',
   );
   const controller = new SessionController(profiles, live, now, preferences, (name, details) =>
     logs.write('info', 'mesure', name, details),
   );
-  controller.setSetup({ openaiKey: !!initialKey });
+  controller.setSetup({ openaiKey: hasInitialKey });
   imageGeneration.onActivity((activity) => controller.setImageActivity(activity));
   const ambient = new AmbientModules(
     addonRuntime,
@@ -307,7 +347,7 @@ export async function createApp(
   const memory = new PersonalMemory(
     new MemoryRepository(db, now),
     controller,
-    options.memoryExtractor ?? (initialKey ? createMemoryExtractor(initialKey) : null),
+    options.memoryExtractor ?? createActiveMemoryExtractor(),
     now,
     logs,
   );
@@ -315,12 +355,12 @@ export async function createApp(
   secretStore.onChange((name) => {
     const value = secretStore.get(name);
     logs.addSecret(value);
-    if (name === 'OPENAI_API_KEY') {
-      live.setGateway(value ? createLiveGateway(value, logs) : null);
-      openaiImageCreator = value ? makeImageCreator(value) : null;
-      if (!options.memoryExtractor)
-        memory.setExtractor(value ? createMemoryExtractor(value) : null);
-      controller.setSetup({ openaiKey: !!value });
+    if (name === 'OPENAI_API_KEY' || name === 'GEMINI_API_KEY') {
+      live.setGateway(createActiveGateway());
+      openaiImageCreator = openaiKey() ? makeImageCreator(openaiKey()!) : null;
+      geminiImageCreator = geminiKey() ? makeGeminiImageCreator(geminiKey()!) : null;
+      if (!options.memoryExtractor) memory.setExtractor(createActiveMemoryExtractor());
+      controller.setSetup({ openaiKey: !!(geminiKey() || openaiKey()) });
     }
     logs.write('info', 'local', value ? 'Clé enregistrée' : 'Clé retirée', {
       name,
@@ -371,7 +411,7 @@ export async function createApp(
     const local = perception.snapshot();
     return {
       presenceTimings: controller.getPresenceTimings(),
-      apiConfigured: !!openaiKey(),
+      apiConfigured: !!(geminiKey() || openaiKey()),
       perceptionConfigured: !!config.perceptionToken,
       defaultPassword: defaultPassword(),
       enrolledFaces: local.enrolledProfileIds.length,
@@ -618,14 +658,20 @@ export async function createApp(
     (socket) => imageGeneration.connect(socket),
   );
 
-  app.get<{ Params: { id: string } }>('/api/generated-images/:id.webp', async (request, reply) => {
-    const file = imageGeneration.generatedFile(request.params.id);
-    if (!file) return reply.code(404).send({ error: 'Image introuvable.' });
-    return reply
-      .type('image/webp')
-      .header('Cache-Control', 'private, max-age=300')
-      .send(readFileSync(file));
-  });
+  app.get<{ Params: { id: string; extension: string } }>(
+    '/api/generated-images/:id.:extension',
+    async (request, reply) => {
+      if (request.params.extension !== 'webp' && request.params.extension !== 'png')
+        return reply.code(404).send({ error: 'Image introuvable.' });
+      const file = imageGeneration.generatedFile(request.params.id);
+      if (!file || !file.endsWith('.' + request.params.extension))
+        return reply.code(404).send({ error: 'Image introuvable.' });
+      return reply
+        .type(request.params.extension === 'png' ? 'image/png' : 'image/webp')
+        .header('Cache-Control', 'private, max-age=300')
+        .send(readFileSync(file));
+    },
+  );
 
   registerHardware(app, {
     logs,
@@ -679,6 +725,7 @@ export async function createApp(
     provider?: ImageGenerationProvider;
     openaiModel?: OpenAIImageModel;
     openaiQuality?: OpenAIImageQuality;
+    geminiModel?: GeminiImageModel;
   }>({
     type: 'object',
     additionalProperties: false,
@@ -692,6 +739,7 @@ export async function createApp(
       provider: { enum: [...IMAGE_GENERATION_PROVIDERS] },
       openaiModel: { enum: [...OPENAI_IMAGE_MODELS] },
       openaiQuality: { enum: [...OPENAI_IMAGE_QUALITIES] },
+      geminiModel: { enum: [...GEMINI_IMAGE_MODELS] },
     },
   });
   app.patch('/api/admin/image-generation', { preHandler: requireAdmin }, async (request, reply) => {
@@ -711,6 +759,8 @@ export async function createApp(
         imageGeneration.setOpenAIModel(request.body.openaiModel);
       if (request.body.openaiQuality !== undefined)
         imageGeneration.setOpenAIQuality(request.body.openaiQuality);
+      if (request.body.geminiModel !== undefined)
+        imageGeneration.setGeminiModel(request.body.geminiModel);
       if (request.body.model !== undefined) imageGeneration.setModel(request.body.model);
       if (request.body.sanaSteps !== undefined)
         imageGeneration.setSanaSteps(request.body.sanaSteps);
@@ -901,11 +951,25 @@ export async function createApp(
     });
     return [
       {
+        ...describe('GEMINI_API_KEY'),
+        label: 'Clé Google Gemini',
+        usedBy: 'Conversation, mémoire et images Gemini — prioritaire sur OpenAI',
+        url: 'https://aistudio.google.com/apikey',
+        note: null,
+      },
+      {
         ...describe('OPENAI_API_KEY'),
         label: 'Clé OpenAI',
-        usedBy: 'Conversation et mémoire',
+        usedBy: 'Conversation et mémoire si Gemini est absent ; images OpenAI',
         url: 'https://platform.openai.com/api-keys',
         note: null,
+      },
+      {
+        ...describe('TAVILY_API_KEY'),
+        label: 'Clé Tavily pour la recherche web',
+        usedBy: 'Recherche web avec Gemini si Tavily est activé',
+        url: 'https://app.tavily.com/home',
+        note: '1 000 crédits gratuits par mois',
       },
       ...[
         ...new Map([...addonSecrets.values()].map((secret) => [secret.env, secret])).values(),
@@ -1149,7 +1213,7 @@ export async function createApp(
     if (request.body.blocked) live.block();
     else if (wasBlocked) controller.resumeAutomatic();
     controller.publish();
-    // La génération d’image par OpenAI suit le même blocage.
+    // Les fournisseurs d’images suivent le même blocage global.
     broadcast({ schemaVersion: 1, type: 'devices', status: devices() }, true);
     return controller.snapshot();
   });
@@ -1213,6 +1277,16 @@ export async function createApp(
     controller.setWebSearchEnabled(request.body.enabled);
     return controller.snapshot();
   });
+  app.patch(
+    '/api/admin/web-search/gemini-tavily',
+    { preHandler: requireAdmin },
+    async (request, reply) => {
+      if (!enabledSchema(request.body))
+        return reply.code(400).send({ error: 'Réglage de Tavily pour Gemini invalide.' });
+      controller.setGeminiTavilyEnabled(request.body.enabled);
+      return controller.snapshot();
+    },
+  );
   app.patch('/api/admin/silence-close', { preHandler: requireAdmin }, async (request, reply) => {
     if (!isSilenceClose(request.body))
       return reply.code(400).send({ error: 'Fermeture après silence invalide : de 3 à 300 s.' });

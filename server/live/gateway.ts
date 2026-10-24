@@ -1,12 +1,18 @@
 import type { DiagnosticLog } from '../logs.js';
 import OpenAI from 'openai';
 import WebSocket from 'ws';
-import type {
-  LiveCreateResponse,
-  MediaSessionConfig,
-  SessionConfig,
-} from 'openai/resources/live/live';
+import type { MediaSessionConfig, SessionConfig } from 'openai/resources/live/live';
 import type { ConnectClientEvent, ConnectServerEvent } from 'openai/resources/live/sideband';
+
+export type LiveCreateResponse =
+  | {
+      session: { id: string };
+      transport: { type: 'webrtc'; sdp: string };
+    }
+  | {
+      session: { id: string };
+      transport: { type: 'websocket' };
+    };
 
 export interface LiveConnection {
   send(event: ConnectClientEvent): void;
@@ -23,6 +29,8 @@ export interface LiveHandlers {
   failure(): void;
 }
 export interface LiveGateway {
+  provider?: 'openai' | 'gemini';
+  setTavilySearchEnabled?(enabled: boolean): void;
   hangup?(id: string): Promise<void>;
   /** Ouvre la connexion HTTPS que réutilisera la création de session, sans rien créer. */
   prewarm?(): Promise<void>;
@@ -83,12 +91,13 @@ export function createLiveGateway(apiKey: string, logs?: DiagnosticLog): LiveGat
     };
   }
   return {
+    provider: 'openai',
     hangup: (id) => client.live.sessions.hangup(id),
     // Lecture gratuite : le handshake TLS est fait avant l’admission, pas pendant la création.
     prewarm: async () => {
       await client.models.retrieve('gpt-live-1').catch(() => {});
     },
-    create: (session, sdp, signal) =>
+    create: async (session, sdp, signal) =>
       client.live.create({ session, transport: { type: 'webrtc', sdp } }, { signal }),
     attach(id, handlers) {
       logs?.write('info', 'openai', 'Connexion du canal de contrôle', { remoteId: id });

@@ -6,6 +6,10 @@ Le fonctionnement actuel est décrit dans la [documentation](docs/README.md). Ce
 
 ## Non publié
 
+**Modifié**
+
+- Gemini utilise la recherche Google native ou Tavily selon le réglage « Utiliser Tavily avec Gemini ». La recherche native OpenAI reste inchangée.
+
 ### 2026-10-20 : contrat des modules 0.2.0
 
 Cornelius passe en 0.2.0. Ces ajouts restent compatibles `apiVersion: 1` ; un module qui s’en sert déclare `minCoreVersion: '0.2.0'`.

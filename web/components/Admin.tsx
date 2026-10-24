@@ -451,8 +451,8 @@ export function Admin({
             <p className="admin-eyebrow">Où vont les données</p>
             <p>
               Visages et description de la scène : traités chez vous. Seule la conversation parlée
-              et son contexte passent par OpenAI. Les demandes confiées à un agent connecté lui sont
-              aussi transmises.
+              et son contexte passent par Gemini, prioritaire, ou OpenAI si aucune clé Gemini n’est
+              configurée. Les demandes confiées à un agent connecté lui sont aussi transmises.
             </p>
           </div>
         </aside>

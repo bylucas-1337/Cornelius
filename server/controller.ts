@@ -69,6 +69,8 @@ export interface SessionPreferencesStore {
   setAdmissionSound?(settings: AdmissionSound): void;
   getWebSearchEnabled?(): boolean;
   setWebSearchEnabled?(enabled: boolean): void;
+  getGeminiTavilyEnabled?(): boolean;
+  setGeminiTavilyEnabled?(enabled: boolean): void;
   getGreetingMode?(): GreetingMode;
   setGreetingMode?(mode: GreetingMode): void;
   getKnownPeopleOnly?(): boolean;
@@ -217,6 +219,7 @@ export class SessionController {
   private cardSettings: CardSettings = { ...DEFAULT_CARD_SETTINGS };
   private admissionSound: AdmissionSound = { ...DEFAULT_ADMISSION_SOUND };
   private webSearch = true;
+  private geminiTavily = true;
   private greeting: GreetingMode = DEFAULT_GREETING_MODE;
   private knownPeopleOnly = false;
   private silenceClose: SilenceClose = { ...DEFAULT_SILENCE_CLOSE };
@@ -260,6 +263,7 @@ export class SessionController {
     this.cardSettings = preferences?.getCardSettings?.() ?? { ...DEFAULT_CARD_SETTINGS };
     this.admissionSound = { ...(preferences?.getAdmissionSound?.() ?? DEFAULT_ADMISSION_SOUND) };
     this.webSearch = preferences?.getWebSearchEnabled?.() ?? true;
+    this.geminiTavily = preferences?.getGeminiTavilyEnabled?.() ?? true;
     this.greeting = preferences?.getGreetingMode?.() ?? DEFAULT_GREETING_MODE;
     this.knownPeopleOnly = preferences?.getKnownPeopleOnly?.() ?? false;
     this.silenceClose = { ...(preferences?.getSilenceClose?.() ?? DEFAULT_SILENCE_CLOSE) };
@@ -392,6 +396,7 @@ export class SessionController {
       admissionSound: { ...this.admissionSound },
       delegationMode: this.delegationMode,
       webSearchEnabled: this.webSearch,
+      geminiTavilyEnabled: this.geminiTavily,
       greeting: this.greeting,
       knownPeopleOnly: this.knownPeopleOnly,
       silenceClose: { ...this.silenceClose },
@@ -989,6 +994,15 @@ export class SessionController {
     // Les outils d’une session Live sont fixés à sa création : la rouvrir avec la nouvelle liste.
     this.session.contextVersion++;
     this.restart('Recherche web modifiée.');
+    this.publish();
+  }
+
+  setGeminiTavilyEnabled(enabled: boolean): void {
+    if (this.geminiTavily === enabled) return;
+    this.preferences?.setGeminiTavilyEnabled?.(enabled);
+    this.geminiTavily = enabled;
+    this.session.contextVersion++;
+    this.restart('Moteur de recherche Gemini modifié.');
     this.publish();
   }
 

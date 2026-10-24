@@ -12,6 +12,7 @@ if (!existsSync(path)) {
       'CORNELIUS_DATABASE=data/cornelius.sqlite',
       'CORNELIUS_ADMIN_PASSWORD=' + defaultPassword,
       'CORNELIUS_PERCEPTION_TOKEN=' + randomBytes(32).toString('base64url'),
+      'GEMINI_API_KEY=',
       'OPENAI_API_KEY=',
       '',
     ].join('\n'),
@@ -33,6 +34,7 @@ if (!existsSync(path)) {
       '\nCORNELIUS_PERCEPTION_TOKEN=' +
       randomBytes(32).toString('base64url') +
       '\n';
+  if (!/^GEMINI_API_KEY=/m.test(value)) value += 'GEMINI_API_KEY=\n';
   if (!/^OPENAI_API_KEY=/m.test(value)) value += 'OPENAI_API_KEY=\n';
   writeFileSync(path, value, { mode: 0o600 });
   console.info('Configuration conservée ; mot de passe et champs matériels vérifiés.');

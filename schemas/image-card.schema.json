@@ -9,7 +9,7 @@
     "cardType": { "type": "string", "const": "image" },
     "title": { "type": "string", "minLength": 1, "maxLength": 80 },
     "prompt": { "type": "string", "minLength": 1, "maxLength": 1000 },
-    "imageUrl": { "type": "string", "pattern": "^/api/generated-images/[a-f0-9-]{36}\\.webp$", "maxLength": 96 },
+    "imageUrl": { "type": "string", "pattern": "^/api/generated-images/[a-f0-9-]{36}\\.(webp|png)$", "maxLength": 96 },
     "model": {
       "enum": [
         "sdxl-turbo",
@@ -18,7 +18,12 @@
         "z-image-turbo",
         "gpt-image-2.5-flare",
         "gpt-image-2.5-sunburst",
-        "gpt-image-1-mini"
+        "gpt-image-1-mini",
+        "gemini-nano-banana-2.1",
+        "gemini-3.1-flash-lite-image",
+        "gemini-3.1-flash-image",
+        "gemini-3-pro-image",
+        "gemini-2.5-flash-image"
       ]
     },
     "width": { "type": "integer", "enum": [512, 1024] },

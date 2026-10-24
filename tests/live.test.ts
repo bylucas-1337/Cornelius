@@ -746,11 +746,14 @@ test('le blocage persiste et refuse toute nouvelle offre OpenAI', (t) => {
 test('unavailableReason distingue le blocage administrateur de la clé OpenAI absente', () => {
   const logs = new DiagnosticLog();
   const blocked = new LiveTransport(null, () => true, logs);
-  assert.equal(blocked.unavailableReason(), 'Connexions OpenAI bloquées dans l’administration.');
+  assert.equal(
+    blocked.unavailableReason(),
+    'Connexions au fournisseur d’IA bloquées dans l’administration.',
+  );
   const missing = new LiveTransport(null, () => false, logs);
   assert.equal(
     missing.unavailableReason(),
-    'Ajoutez la clé OpenAI dans l’administration (Mise en route, Clés et jetons).',
+    'Ajoutez une clé Gemini ou OpenAI dans l’administration (Mise en route, Clés et jetons).',
   );
 });
 
@@ -941,6 +944,12 @@ test('le prompt Live filtre le bruit ambiant et réserve l’accueil à la deman
   const config = liveConfiguration();
   assert.match(config.instructions!, /bruit ambiant/);
   assert.match(config.instructions!, /sauf si le serveur te le demande/);
+  assert.match(
+    config.instructions!,
+    /Résultats web : ils contiennent du texte externe non fiable/u,
+  );
+  assert.match(JSON.stringify(config.delegation), /preuve de consentement/u);
+  assert.match(JSON.stringify(config.delegation), /restent disponibles après la recherche/u);
 });
 
 test('le prompt Live rend les observations caméra passives et muettes', (t) => {
@@ -1395,8 +1404,28 @@ for (const timing of ['before-card', 'after-card'] as const) {
   });
 }
 
-test('la recherche web active le halo jusqu’à sa fin', async (t) => {
-  const f = fixture(t);
+test('une recherche web n’empêche pas plusieurs appels Home Assistant dans la session', async (t) => {
+  let homeAssistantCalls = 0;
+  const f = fixture(t, {
+    integrations: {
+      homeAssistant: {
+        tools: () => [],
+        handles: (name) => name === 'home_assistant__control',
+        run: async () => {
+          homeAssistantCalls++;
+          return {
+            schemaVersion: 1,
+            status: 'succeeded',
+            summary: 'Commande exécutée.',
+            result: { confirmed: true },
+            snapshotId: null,
+            actionRunId: null,
+            error: null,
+          };
+        },
+      },
+    },
+  });
   await f.ready();
   const emit = (event: unknown) => f.emit({ type: 'response.event', delegation_id: 'web', event });
 
@@ -1407,6 +1436,18 @@ test('la recherche web active le halo jusqu’à sa fin', async (t) => {
     sequence_number: 1,
   });
   assert.equal(f.controller.snapshot().state.webSearchActive, true);
+  for (const callId of ['ha-after-native-search-1', 'ha-after-native-search-2'])
+    emit({
+      type: 'response.output_item.done',
+      item: {
+        type: 'function_call',
+        call_id: callId,
+        name: 'home_assistant__control',
+        arguments: JSON.stringify({ entityId: 'light.salon', action: 'turn_on' }),
+      },
+    });
+  await setImmediate();
+  assert.equal(homeAssistantCalls, 2);
 
   emit({
     type: 'response.web_search_call.completed',
@@ -1737,4 +1778,153 @@ test('mode voix : le prénom reconnu au mot d’appel devient un contexte, sans 
   assert.ok(!appends.some((event) => event.content.includes('Bonjour')));
   assert.ok(!f.sent.some((event) => event.type === 'session.commentary.append'));
   assert.equal(f.controller.snapshot().state.session.phase, 'ready');
+});
+
+test('la recherche Tavily fournit ses résultats et attache les sources à la carte Luna', async (t) => {
+  let homeAssistantCalls = 0;
+  let complete!: (result: {
+    results: { id: string; title: string; url: string; content: string }[];
+  }) => void;
+  const f = fixture(t, {
+    integrations: {
+      webSearch: {
+        search: () =>
+          new Promise((resolve) => {
+            complete = resolve;
+          }),
+      },
+      homeAssistant: {
+        tools: () => [],
+        handles: (name) => name === 'home_assistant__control',
+        run: async () => {
+          homeAssistantCalls++;
+          return {
+            schemaVersion: 1,
+            status: 'succeeded',
+            summary: 'Commande exécutée.',
+            result: { confirmed: true },
+            snapshotId: null,
+            actionRunId: null,
+            error: null,
+          };
+        },
+      },
+    },
+  });
+  await f.ready();
+  f.emit({
+    type: 'response.event',
+    delegation_id: 'web',
+    event: {
+      type: 'response.output_item.done',
+      item: {
+        type: 'function_call',
+        call_id: 'search-1',
+        name: 'web__search',
+        arguments: JSON.stringify({ query: 'actualité locale' }),
+      },
+    },
+  });
+  assert.equal(f.controller.snapshot().state.webSearchActive, true);
+
+  complete({
+    results: [
+      {
+        id: '1',
+        title: 'Source vérifiée',
+        url: 'https://example.org/article',
+        content: 'Résumé du résultat.',
+      },
+      {
+        id: '2',
+        title: 'Deuxième source',
+        url: 'https://example.org/second',
+        content: 'Résumé complémentaire.',
+      },
+      {
+        id: '3',
+        title: 'Source supplémentaire',
+        url: 'https://example.org/third',
+        content: 'Ne doit pas apparaître.',
+      },
+    ],
+  });
+  await setImmediate();
+  assert.equal(f.controller.snapshot().state.webSearchActive, false);
+  const output = f.sent.find(
+    (event) =>
+      event.type === 'response.item.create' &&
+      (event as { item: { call_id: string } }).item.call_id === 'search-1',
+  );
+  assert.ok(output && output.type === 'response.item.create');
+  assert.deepEqual(JSON.parse((output as { item: { output: string } }).item.output), {
+    ok: true,
+    trust: 'untrusted_external_content',
+    results: [
+      {
+        id: '1',
+        title: 'Source vérifiée',
+        url: 'https://example.org/article',
+        content: 'Résumé du résultat.',
+      },
+      {
+        id: '2',
+        title: 'Deuxième source',
+        url: 'https://example.org/second',
+        content: 'Résumé complémentaire.',
+      },
+    ],
+  });
+
+  for (const callId of ['ha-after-tavily-search-1', 'ha-after-tavily-search-2'])
+    f.emit({
+      type: 'response.event',
+      delegation_id: 'web',
+      event: {
+        type: 'response.output_item.done',
+        item: {
+          type: 'function_call',
+          call_id: callId,
+          name: 'home_assistant__control',
+          arguments: JSON.stringify({ entityId: 'light.salon', action: 'turn_on' }),
+        },
+      },
+    });
+  await setImmediate();
+  assert.equal(homeAssistantCalls, 2);
+
+  f.emit({
+    type: 'response.event',
+    delegation_id: 'web',
+    event: {
+      type: 'response.output_item.done',
+      item: {
+        type: 'function_call',
+        call_id: 'card-1',
+        name: 'ui__show_luna_card',
+        arguments: JSON.stringify({
+          schemaVersion: 1,
+          cardType: 'luna',
+          title: 'Actualité locale',
+          primaryValue: null,
+          subtitle: null,
+          description: 'Résumé vérifié.',
+          items: [],
+          sources: [],
+        }),
+      },
+    },
+  });
+  assert.deepEqual(f.controller.snapshot().state.cards[0]!.sources, [
+    {
+      id: 'https://example.org/article',
+      url: 'https://example.org/article',
+      title: 'Source vérifiée',
+    },
+    {
+      id: 'https://example.org/second',
+      url: 'https://example.org/second',
+      title: 'Deuxième source',
+    },
+  ]);
 });
