@@ -60,6 +60,10 @@ import { loadAddons } from './addons/registry.js';
 import { createHttpClient } from './addons/http.js';
 import { ActionExecutor, actionSecrets } from './actions.js';
 import { registerAddons } from './addons-api.js';
+import { Mailer, type MailTransport } from './mail.js';
+import { registerMail } from './mail-api.js';
+import { MailRepository } from './mail-store.js';
+import { MAIL_PASSWORD_SECRET } from '../shared/mail.js';
 import { HomeAssistant } from './home-assistant.js';
 import { HomeAssistantRepository } from './home-assistant-store.js';
 import { registerHomeAssistant } from './home-assistant-api.js';
@@ -67,6 +71,8 @@ import { AgentRepository } from './agents-store.js';
 import { HermesClient } from './hermes-client.js';
 import { Agents } from './agents.js';
 import { registerAgents } from './agents-api.js';
+import { ScreensaverLibrary } from './screensaver.js';
+import { registerScreensaver } from './screensaver-api.js';
 import { ImageGeneration } from './image-generation.js';
 import { createOpenAIImageCreator, type OpenAIImageCreator } from './openai-images.js';
 import { createGeminiImageCreator, type GeminiImageCreator } from './gemini-images.js';
@@ -141,6 +147,10 @@ export async function createApp(
     imageInstallerLauncher?: ImageInstallerLauncher;
     imageWorkerLauncher?: ImageWorkerLauncher;
     imageGenerationRoot?: string;
+    /** Dossier des images de l’écran de veille (data/screensaver par défaut). */
+    screensaverRoot?: string;
+    /** Téléchargement de la collection de peintures (remplacé dans les tests). */
+    screensaverFetch?: typeof fetch;
     memoryExtractor?: MemoryExtractor;
     /** Crée les images OpenAI (remplacé dans les tests, sans appel réseau). */
     openaiImageCreator?: (apiKey: string) => OpenAIImageCreator;
@@ -148,6 +158,8 @@ export async function createApp(
     geminiImageCreator?: (apiKey: string) => GeminiImageCreator;
     /** Relance le serveur (fourni par server/index.ts ; absent des tests). */
     restart?: () => void;
+    /** Envoi des e-mails (remplacé dans les tests, sans serveur SMTP réel). */
+    mailTransport?: MailTransport;
   } = {},
 ) {
   const now = options.now ?? Date.now;
@@ -222,6 +234,7 @@ export async function createApp(
     'CORNELIUS_PERCEPTION_TOKEN',
     'CORNELIUS_IMAGE_GENERATION_TOKEN',
     'TAVILY_API_KEY',
+    MAIL_PASSWORD_SECRET,
   ]);
   const addonSecrets = new Map(
     addons.flatMap((addon) =>
@@ -270,6 +283,15 @@ export async function createApp(
       ? mkdtempSync(join(tmpdir(), 'cornelius-images-'))
       : resolve('data', 'generated-images'),
   );
+  const mailRepository = new MailRepository(db, now);
+  const mailer = new Mailer(
+    mailRepository,
+    () => secretStore.get(MAIL_PASSWORD_SECRET),
+    imageGeneration,
+    logs,
+    now,
+    options.mailTransport,
+  );
   const agents = new Agents(new AgentRepository(db, now), new HermesClient(http, now), now);
   const createActiveGateway = () => {
     const gemini = geminiKey();
@@ -314,6 +336,7 @@ export async function createApp(
       imageGeneration,
       webSearch: new TavilySearch(() => secretStore.get('TAVILY_API_KEY'), logs),
       geminiTavilyEnabled: () => preferences.getGeminiTavilyEnabled(),
+      mail: mailer,
       personality: (id) => personality.get(id),
     },
     now,
@@ -331,6 +354,17 @@ export async function createApp(
     logs.write('info', 'mesure', name, details),
   );
   controller.setSetup({ openaiKey: hasInitialKey });
+  const screensaver = new ScreensaverLibrary(
+    db,
+    options.screensaverRoot ??
+      // À côté de la base (data/screensaver) ; une base en mémoire (tests) a son dossier jetable.
+      (config.databasePath === ':memory:'
+        ? mkdtempSync(join(tmpdir(), 'cornelius-screensaver-'))
+        : join(dirname(config.databasePath), 'screensaver')),
+    logs,
+    now,
+    options.screensaverFetch,
+  );
   imageGeneration.onActivity((activity) => controller.setImageActivity(activity));
   const ambient = new AmbientModules(
     addonRuntime,
@@ -391,6 +425,8 @@ export async function createApp(
         );
       }
       broadcast({ schemaVersion: 1, type: 'devices', status }, true);
+      if (kiosk?.socket.readyState === 1)
+        kiosk.socket.send(JSON.stringify(perception.browserCameraConfig()));
     },
     now,
   );
@@ -576,7 +612,8 @@ export async function createApp(
       path.startsWith('/api/') ||
       path.startsWith('/events') ||
       path.startsWith('/audio') ||
-      path.startsWith('/wake-audio')
+      path.startsWith('/wake-audio') ||
+      path.startsWith('/camera-stream')
     );
   }
   function lanAuthorized(request: FastifyRequest): boolean {
@@ -619,7 +656,8 @@ export async function createApp(
         request.url.startsWith('/events') ||
         request.url.startsWith('/perception') ||
         request.url.startsWith('/audio') ||
-        request.url.startsWith('/wake-audio')) &&
+        request.url.startsWith('/wake-audio') ||
+        request.url.startsWith('/camera-stream')) &&
         !origin)
     ) {
       return reply.code(403).send({ error: 'Origine non autorisée.' });
@@ -693,6 +731,7 @@ export async function createApp(
 
   registerHomeAssistant(app, homeAssistant, requireAdmin, () => controller.homeAssistantChanged());
   registerAgents(app, agents, requireAdmin);
+  registerScreensaver(app, screensaver, controller, requireAdmin);
   const satellitePairing = new SatellitePairing(logs, now);
   registerSatellites(app, {
     store: satelliteStore,
@@ -700,6 +739,25 @@ export async function createApp(
     pairing: satellitePairing,
     profiles,
     requireAdmin,
+  });
+  // L’outil vocal suit le serveur et la liste des destinataires : la conversation est relancée.
+  let mailTools = JSON.stringify(mailer.tools(null));
+  const mailChanged = () => {
+    const next = JSON.stringify(mailer.tools(null));
+    if (next === mailTools) return;
+    mailTools = next;
+    controller.restart('Réglage d’e-mail modifié.');
+  };
+  secretStore.onChange((name) => {
+    if (name === MAIL_PASSWORD_SECRET) mailChanged();
+  });
+  registerMail(app, {
+    mailer,
+    store: mailRepository,
+    profiles,
+    secrets: secretStore,
+    requireAdmin,
+    onChanged: mailChanged,
   });
   registerAddons(app, {
     runtime: addonRuntime,
@@ -952,6 +1010,7 @@ export async function createApp(
     return [
       {
         ...describe('GEMINI_API_KEY'),
+        group: 'providers' as const,
         label: 'Clé Google Gemini',
         usedBy: 'Conversation, mémoire et images Gemini — prioritaire sur OpenAI',
         url: 'https://aistudio.google.com/apikey',
@@ -959,6 +1018,7 @@ export async function createApp(
       },
       {
         ...describe('OPENAI_API_KEY'),
+        group: 'providers' as const,
         label: 'Clé OpenAI',
         usedBy: 'Conversation et mémoire si Gemini est absent ; images OpenAI',
         url: 'https://platform.openai.com/api-keys',
@@ -966,15 +1026,26 @@ export async function createApp(
       },
       {
         ...describe('TAVILY_API_KEY'),
+        group: 'providers' as const,
         label: 'Clé Tavily pour la recherche web',
         usedBy: 'Recherche web avec Gemini si Tavily est activé',
         url: 'https://app.tavily.com/home',
         note: '1 000 crédits gratuits par mois',
       },
+      {
+        ...describe(MAIL_PASSWORD_SECRET),
+        group: 'providers' as const,
+        label: 'Mot de passe SMTP',
+        usedBy: 'Envoi par e-mail',
+        url: null,
+        note: 'Le mot de passe du compte d’envoi, ou un mot de passe d’application (Gmail, iCloud). Le reste se règle dans Modules → E-mail.',
+      },
       ...[
         ...new Map([...addonSecrets.values()].map((secret) => [secret.env, secret])).values(),
       ].map((secret) => ({
         ...describe(secret.env),
+        group: 'modules' as const,
+        icon: secret.addon.display?.icon,
         label: secret.label.replace(/^(un|une)\s+/u, '').replace(/^./u, (c) => c.toUpperCase()),
         usedBy: secret.addon.sourceLabel,
         url: secret.url ?? null,
@@ -1056,6 +1127,7 @@ export async function createApp(
       ...homeAssistant.tools(profileId !== null),
       ...agents.tools(profileId),
       ...imageGeneration.tools(),
+      ...mailer.tools(profileId),
       ...vision.tools(),
       ...memory.tools(),
     ];
@@ -1342,6 +1414,30 @@ export async function createApp(
       return controller.snapshot();
     },
   );
+  app.get(
+    '/camera-stream',
+    {
+      websocket: true,
+      preValidation: async (request, reply) => {
+        const id = request.cookies[kioskCookie];
+        if (
+          !id ||
+          kiosk?.kioskId !== id ||
+          !clientActive(clients.get(kiosk.socket)!) ||
+          perception.cameraSource() !== 'browser' ||
+          !perception.browserCameraConfig().enabled
+        )
+          return reply.code(403).send({ error: 'Caméra réservée au miroir actif.' });
+      },
+    },
+    (socket) => {
+      const owner = kiosk!.socket;
+      perception.browserCamera.connect(
+        socket,
+        () => kiosk?.socket === owner && !!clients.get(owner) && clientActive(clients.get(owner)!),
+      );
+    },
+  );
   app.get<{ Querystring: { role?: string } }>(
     '/events',
     {
@@ -1358,7 +1454,10 @@ export async function createApp(
       logs.write('info', 'local', 'Navigateur connecté', { role });
       clients.set(socket, { role, sessionId, kioskId, remote: !fromMachine(request) });
       if (role === 'kiosk') {
-        if (kiosk) kiosk.socket.close(1008, 'Miroir ouvert dans un autre onglet');
+        if (kiosk) {
+          perception.browserCamera.close(1008);
+          kiosk.socket.close(1008, 'Miroir ouvert dans un autre onglet');
+        }
         // L’état audio appartient à la page : elle le renvoie dès l’ouverture (media_ready).
         kiosk = { socket, kioskId: kioskId! };
         controller.heartbeat();
@@ -1403,6 +1502,7 @@ export async function createApp(
         logs.write('info', 'local', 'Navigateur déconnecté', { role, code });
         clients.delete(socket);
         if (kiosk?.socket === socket) {
+          perception.browserCamera.close(code === 1008 ? 1008 : 1013);
           kiosk = null;
           // Le média WebRTC ne passe pas par ce WebSocket : une coupure réseau ou une
           // resynchronisation garde la conversation, et le délai navigateur (5 s) la ferme
@@ -1411,6 +1511,7 @@ export async function createApp(
         }
       });
       socket.send(JSON.stringify(controller.snapshot()));
+      if (role === 'kiosk') socket.send(JSON.stringify(perception.browserCameraConfig()));
       if (role === 'admin')
         socket.send(JSON.stringify({ schemaVersion: 1, type: 'devices', status: devices() }));
     },

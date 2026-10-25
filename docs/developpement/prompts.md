@@ -25,14 +25,14 @@ Cette page explique où se trouvent les consignes que Cornelius donne aux modèl
 
 | Fichier | Contenu |
 |---|---|
-| `server/live/configuration.ts` | `liveConfiguration()` : prompt de la conversation vocale, prompt de la délégation, liste des outils (dont `web_search` et `ui__show_luna_card`), fragments ajoutés selon les outils présents (`vision__look`, `image__generate`, `home_assistant__read`, `home_assistant__control`, `agents__start`), et la personnalisation (`personalityInstructions`, `personalContextInstructions`). |
+| `server/live/configuration.ts` | `liveConfiguration()` : prompt de la conversation vocale, prompt de la délégation, liste des outils (dont `web_search` et `ui__show_luna_card`), fragments ajoutés selon les outils présents (`vision__look`, `image__generate`, `mail__send`, `home_assistant__read`, `home_assistant__control`, `agents__start`), et la personnalisation (`personalityInstructions`, `personalContextInstructions`). |
 | `server/live/gemini-gateway.ts` | Adaptation du prompt et des outils de délégation au protocole Gemini Live ; `web_search` devient la fonction `web__search` exécutée par le serveur, sans activer Google Search natif. |
 | `server/tavily-search.ts` | Recherche web côté serveur avec Tavily, lorsque l’option est activée pour Gemini ; les résultats et leurs sources validées sont renvoyés à la délégation. |
 | `server/live/transport.ts` | Routage des outils de délégation, dont la recherche Tavily, et consignes ajoutées pendant la session : accueil selon **Quand il écoute → Accueil à l’ouverture** (« Bonjour » et le prénom, accueil libre, ou pas d’accueil), annonce d’une carte affichée, description de la caméra en contexte silencieux (découpée en fragments de 400 octets), résultats de Hermes. |
 | `server/live/card-overlap.ts` | Règle qui écarte une carte Luna répétant la carte d’un module. |
 | `perception/scene.py` | Consignes de LFM2.5-VL (`INSTRUCTIONS`) : description générale à l’ouverture (`scene`) et réponse à une question visuelle (`tool`). |
 | `server/memory-extractor.ts` | `memoryExtractionInstructions` : règles d’extraction de la mémoire après la conversation. |
-| `server/addons/runtime.ts`, `server/actions.ts`, `server/vision.ts`, `server/image-generation.ts`, `server/memory.ts`, `server/home-assistant.ts`, `server/agents.ts` | Descriptions des outils et de leurs paramètres, construites pour le profil actif. |
+| `server/addons/runtime.ts`, `server/actions.ts`, `server/vision.ts`, `server/image-generation.ts`, `server/mail.ts`, `server/memory.ts`, `server/home-assistant.ts`, `server/agents.ts` | Descriptions des outils et de leurs paramètres, construites pour le profil actif. |
 | `addons/<id>/index.ts` | Description des outils de chaque module. |
 
 Les schémas des paramètres viennent de `schemas/` (par exemple `luna-card.schema.json`, `vision-look.schema.json`). Le serveur valide toujours les arguments reçus, même quand le modèle est contraint par le schéma.

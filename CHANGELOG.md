@@ -10,6 +10,48 @@ Le fonctionnement actuel est décrit dans la [documentation](docs/README.md). Ce
 
 - Gemini utilise la recherche Google native ou Tavily selon le réglage « Utiliser Tavily avec Gemini ». La recherche native OpenAI reste inchangée.
 
+### 2026-10-23 : réglages du micro
+
+**Ajouté**
+
+- Micro et haut-parleurs : interrupteurs « Réduction du bruit du navigateur » et « Gain automatique du micro », propres au navigateur du miroir. L’annulation d’écho reste toujours active.
+- « Tester le micro » : niveau du micro pendant dix secondes, et ce que le navigateur a vraiment appliqué.
+
+**Modifié**
+
+- Consigne d’interruption de GPT-Live alignée sur le guide d’OpenAI : il s’arrête dès qu’on le coupe, même au milieu d’une phrase ou pendant l’attente d’un résultat.
+
+### 2026-10-23 : envoi par e-mail
+
+**Ajouté**
+
+- Module natif **E-mail** (groupe « Capacités de Cornelius ») : « envoie-moi cette image », « envoie l’image du phare à Baptiste », « envoie-moi l’adresse ». L’image affichée, ou l’une des trois dernières, part en pièce jointe ; un court message part sans image.
+- Compte d’envoi SMTP chiffré (TLS ou STARTTLS), avec les réglages de Gmail, iCloud, Orange, Free, SFR et OVH en un clic, « Tester la connexion » et un e-mail d’essai par destinataire. Mot de passe `CORNELIUS_SMTP_PASSWORD`, aussi dans « Clés et jetons » ; les espaces d’un mot de passe d’application sont retirés.
+- Destinataires fixés dans l’administration, reliés ou non à un profil, plusieurs adresses par profil possibles (« Artus travail ») : la conversation ne connaît que leurs noms, jamais leurs adresses, qui ne sont pas diffusées au miroir. « Envoie-moi » vise la personne reconnue ; une image d’une personne ne part que pour elle ; vingt e-mails par heure au plus ; un envoi incertain n’est jamais répété.
+- Client SMTP sans dépendance (`server/smtp.ts`), testé contre un faux serveur local chiffré.
+
+**Modifié**
+
+- Les identifiants `agents`, `home_assistant`, `http`, `image`, `mail`, `memory`, `ui`, `vision` et `web` sont réservés aux outils du cœur : un module qui en prend un est refusé.
+- Les tests unitaires des modules ne chargent plus le dépôt `cornelius-modules` voisin.
+
+### 2026-10-23 : caméra à l’envers
+
+**Ajouté**
+
+- Caméra : interrupteur « Caméra montée à l’envers » dans l’administration. L’image est retournée de 180° par la perception, pour la caméra du serveur comme pour celle du navigateur, avant la détection des visages et l’aperçu.
+
+### 2026-10-22 : écran de veille
+
+**Ajouté**
+
+- Écran de veille du miroir : des peintures et vos photos plein écran quand personne n’est devant lui, à la façon d’un cadre d’art. Quand une personne arrive, l’orbe réapparaît devant l’image, qui se grise, s’enroule et s’effondre dans l’orbe en laissant paraître le noir.
+- Rubrique « Écran de veille » de l’administration : activation, rythme des images, délai de retour, envoi de photos et sélection de 32 peintures du domaine public à télécharger (Wikimedia Commons), dont 16 verticales.
+- Transitions au choix (Aspiration, Cendres, Onde, Mosaïque, Rideau, Fondu), « Au hasard » et « Sans transition », avec leur durée réglable (1 s par défaut).
+- Retrait des images par sélection : cases sur les vignettes, filtres (peintures, photos, verticales, horizontales) et « Tout sélectionner ». Le sens d’une photo de téléphone tient compte de sa rotation.
+- Trois affichages des images, jamais étirées : entière de bord à bord, comme une toile, ou plein écran.
+- L’orbe revient au moindre mouvement, ou selon le réveil de Cornelius : selon ce qui ouvre la conversation (présence, regard, mot « Cornelius »), réservé aux personnes reconnues si l’ouverture l’est.
+
 ### 2026-10-20 : contrat des modules 0.2.0
 
 Cornelius passe en 0.2.0. Ces ajouts restent compatibles `apiVersion: 1` ; un module qui s’en sert déclare `minCoreVersion: '0.2.0'`.

@@ -39,9 +39,11 @@ import type {
 import type { HomeAssistantCommand, HomeAssistantView } from '../shared/home-assistant';
 import type { AgentAdminView, AgentConnectionInput, AgentTaskView } from '../shared/agents';
 import type { ToolResult } from '../shared/addons';
+import type { MailRecipient, MailSettings, MailView } from '../shared/mail';
 import type { MemoryView, MemoryEdit } from '../shared/memory';
 import type { PersonalityView } from '../shared/personality';
 import type { PendingSatelliteView, SatelliteView } from '../shared/satellites';
+import type { ScreensaverImage, ScreensaverSettings, ScreensaverView } from '../shared/screensaver';
 
 export type Role = 'admin' | 'kiosk';
 
@@ -275,6 +277,29 @@ export const api = {
       method: 'PATCH',
       body: JSON.stringify({ scale }),
     }),
+  screensaverImages: () => request<{ images: ScreensaverImage[] }>('/api/screensaver'),
+  screensaver: () => request<ScreensaverView>('/api/admin/screensaver'),
+  screensaverSettings: (settings: ScreensaverSettings) =>
+    request<StateEvent>('/api/admin/screensaver', {
+      method: 'PATCH',
+      body: JSON.stringify(settings),
+    }),
+  addScreensaverImage: (file: File) =>
+    request<ScreensaverView>('/api/admin/screensaver/images', {
+      method: 'POST',
+      body: file,
+      // Le fichier brut : son type et son nom remplacent l’en-tête JSON par défaut.
+      headers: { 'Content-Type': file.type, 'X-File-Name': encodeURIComponent(file.name) },
+      timeoutMs: SLOW_REQUEST_TIMEOUT_MS,
+    }),
+  removeScreensaverImage: (id: string) =>
+    request<ScreensaverView>('/api/admin/screensaver/images/' + encodeURIComponent(id), {
+      method: 'DELETE',
+    }),
+  removeScreensaverImages: (ids: string[]) =>
+    post<ScreensaverView>('/api/admin/screensaver/images/remove', { ids }),
+  installScreensaverCollection: () =>
+    post<ScreensaverView>('/api/admin/screensaver/collection', {}),
   advancedAudioBuffer: (enabled: boolean) =>
     request<StateEvent>('/api/admin/advanced-audio-buffer', {
       method: 'PATCH',
@@ -362,6 +387,36 @@ export const api = {
     request<{ secrets: SecretView[] }>(`/api/admin/secrets/${encodeURIComponent(env)}`, {
       method: 'DELETE',
     }),
+  mail: () => request<MailView>('/api/admin/mail'),
+  saveMailSettings: (settings: Partial<MailSettings>) =>
+    request<MailView>('/api/admin/mail/settings', {
+      method: 'PUT',
+      body: JSON.stringify(settings),
+    }),
+  saveMailPassword: (value: string) =>
+    request<MailView>('/api/admin/mail/password', {
+      method: 'PUT',
+      body: JSON.stringify({ value }),
+    }),
+  deleteMailPassword: () => request<MailView>('/api/admin/mail/password', { method: 'DELETE' }),
+  addMailRecipient: (input: Pick<MailRecipient, 'name' | 'address' | 'profileId'>) =>
+    post<MailView>('/api/admin/mail/recipients', input),
+  updateMailRecipient: (id: string, input: Pick<MailRecipient, 'name' | 'address' | 'profileId'>) =>
+    request<MailView>(`/api/admin/mail/recipients/${encodeURIComponent(id)}`, {
+      method: 'PUT',
+      body: JSON.stringify(input),
+    }),
+  deleteMailRecipient: (id: string) =>
+    request<MailView>(`/api/admin/mail/recipients/${encodeURIComponent(id)}`, {
+      method: 'DELETE',
+    }),
+  /** Connexion seule (null) ou e-mail d’essai à un destinataire : le serveur SMTP peut tarder. */
+  testMail: (recipientId: string | null) =>
+    post<{ ok: boolean; summary: string; mail: MailView }>(
+      '/api/admin/mail/test',
+      { recipientId },
+      slow,
+    ),
   changePassword: (current: string, next: string) =>
     post<{ ok: boolean }>('/api/admin/password', { current, next }),
   restartServer: () => post<{ ok: boolean }>('/api/admin/restart', {}),

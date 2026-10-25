@@ -31,7 +31,7 @@
 
 Cornelius transforme un écran, tel quel ou glissé derrière un miroir sans tain, en assistant pour toute la famille. Il reconnaît qui se présente devant lui, ouvre la conversation quand on le regarde ou qu’on l’appelle par son nom, et répond à la voix avec des cartes qui s’affichent sur le miroir : la météo, le prochain bus, la lumière du salon, un souvenir, une image…
 
-La caméra, les visages et l’écoute du mot d’appel restent sur l’ordinateur du miroir. Seule la conversation passe par le fournisseur configuré (Gemini en priorité, OpenAI en secours), et seulement quand elle est ouverte.
+Par défaut, la caméra, les visages et l’écoute du mot d’appel restent sur le serveur Cornelius. En option, [la caméra du navigateur](docs/fonctionnalites/camera-navigateur.md) envoie ses images au serveur sur le réseau local chiffré, pour la même analyse locale. Seule la conversation passe par le fournisseur configuré (Gemini en priorité, OpenAI en secours), et seulement quand elle est ouverte.
 
 ## ✨ Ce que fait Cornelius
 
@@ -69,11 +69,21 @@ La caméra, les visages et l’écoute du mot d’appel restent sur l’ordinate
   <tr>
     <td valign="top">
       <h4>👁️ Il voit et il dessine</h4>
-      En option, il décrit ce que montre la caméra et crée des images, sur l’ordinateur ou avec OpenAI.
+      En option, il décrit ce que montre la caméra et crée des images, sur l’ordinateur ou avec OpenAI, puis les envoie par e-mail sur le téléphone de la famille.
     </td>
     <td valign="top">
       <h4>🧩 Il s’enrichit</h4>
       Des modules ajoutent de nouvelles informations et de nouveaux outils vocaux. Les modules externes vivent dans <a href="https://github.com/lfpoulain/cornelius-modules">cornelius-modules</a> et se mettent à jour à part.
+    </td>
+  </tr>
+  <tr>
+    <td valign="top">
+      <h4>🖼️ Il expose de l’art au repos</h4>
+      Quand personne n’est là, le miroir affiche des peintures du domaine public ou vos photos ; l’orbe les efface à votre retour.
+    </td>
+    <td valign="top">
+      <h4>📡 Il répond dans les autres pièces</h4>
+      Des satellites audio (micro et haut-parleur) répondent à « Cornelius » ailleurs dans la maison.
     </td>
   </tr>
 </table>
@@ -167,14 +177,14 @@ Toute la documentation part de [l’index](docs/README.md).
 | ------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | **Installer**       | [Linux](docs/installation/linux.md) · [Windows](docs/installation/windows.md) · [Carte graphique](docs/installation/gpu.md)                                                                                                                                                                                                                                                                                   |
 | **Utiliser**        | [Le miroir](docs/utilisation/miroir.md) · [L’administration](docs/utilisation/administration.md) · [Dépannage](docs/utilisation/depannage.md)                                                                                                                                                                                                                                                                 |
-| **Fonctionnalités** | [Ouverture et présence](docs/fonctionnalites/ouverture-et-presence.md) · [Mot d’appel](docs/fonctionnalites/mot-d-appel.md) · [Mémoire](docs/fonctionnalites/memoire.md) · [Home Assistant](docs/fonctionnalites/home-assistant.md) · [Agents Hermes](docs/fonctionnalites/agents-hermes.md) · [Vision locale](docs/fonctionnalites/vision-locale.md) · [Images](docs/fonctionnalites/generation-d-images.md) |
+| **Fonctionnalités** | [Ouverture et présence](docs/fonctionnalites/ouverture-et-presence.md) · [Mot d’appel](docs/fonctionnalites/mot-d-appel.md) · [Mémoire](docs/fonctionnalites/memoire.md) · [Home Assistant](docs/fonctionnalites/home-assistant.md) · [Agents Hermes](docs/fonctionnalites/agents-hermes.md) · [Vision locale](docs/fonctionnalites/vision-locale.md) · [Caméra du navigateur](docs/fonctionnalites/camera-navigateur.md) · [Images](docs/fonctionnalites/generation-d-images.md) · [E-mail](docs/fonctionnalites/envoi-par-e-mail.md) |
 | **Modules**         | [Les utiliser](docs/modules/README.md) · [Le contrat](docs/modules/reference.md) · [En créer un](https://github.com/lfpoulain/cornelius-modules/blob/main/docs/creer-un-module.md) (dépôt cornelius-modules)                                                                                                                                                                                                  |
 | **Développer**      | [Développement](docs/developpement/README.md) · [Architecture](docs/developpement/architecture.md) · [Contribuer](CONTRIBUTING.md) · [Historique](CHANGELOG.md)                                                                                                                                                                                                                                               |
 | **Référence**       | [Configuration](docs/reference/configuration.md) · [Confidentialité](docs/reference/confidentialite.md) · [Licences](docs/reference/licences.md) · [Glossaire](docs/reference/glossaire.md)                                                                                                                                                                                                                   |
 
 ## 🔒 Confidentialité
 
-- 🎥 Les images de la caméra et les visages restent sur l’ordinateur du miroir.
+- 🎥 Les images et les signatures de visage sont analysées sur le serveur Cornelius. Avec la caméra du navigateur, les images traversent le réseau local chiffré sans être enregistrées.
 - 🎙️ Le mot « Cornelius » est reconnu en local : en veille, le son ne quitte pas l’ordinateur.
 - 💬 La voix et le texte partent chez le fournisseur configuré seulement pendant une conversation. Cornelius n’enregistre ni image, ni son, ni transcription sur le disque.
 

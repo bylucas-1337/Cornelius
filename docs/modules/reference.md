@@ -23,6 +23,7 @@ Cette page vit avec le code qu’elle décrit : toute évolution du contrat la m
 | Confier une tâche longue à un agent personnel | Les [agents Hermes](../fonctionnalites/agents-hermes.md) |
 | Afficher une information sans la demander | Le champ `ambient` d’un module, plus bas |
 | Toucher à la caméra, au son ou à l’analyse d’image | Le cœur de Cornelius ; Vision et Génération d’image ne sont pas des modules de ce contrat |
+| Envoyer une image ou un message à quelqu’un du foyer | Le module natif [E-mail](../fonctionnalites/envoi-par-e-mail.md), dans le cœur |
 | Un nouveau type de carte, ou un outil qui agit | Une évolution du cœur, à concevoir à part |
 
 ## Vocabulaire
@@ -54,7 +55,63 @@ Le fichier `index.ts` DOIT exporter par défaut un objet `AddonDefinition<TConfi
 
 | Champ | Règle |
 | --- | --- |
-| `id` | DOIT être égal au nom du dossier et suivre `^[a-z][a-z0-9_]{0,31}$` |
+| `id` | DOIT être égal au nom du dossier et suivre `^[a-z][a-z0-9_]{0,31}# Référence du contrat des modules
+
+Cette page fixe le contrat `apiVersion: 1` que doit respecter un module d’informations (un « addon » dans le code). Elle s’adresse aux développeurs et aux assistants de code qui écrivent ou relisent un module. Pour une première prise en main, suivez d’abord le [tutoriel](https://github.com/lfpoulain/cornelius-modules/blob/main/docs/creer-un-module.md) du dépôt cornelius-modules.
+
+Cette page vit avec le code qu’elle décrit : toute évolution du contrat la met à jour dans le même changement. Les modules, eux, s’écrivent à deux endroits, avec les mêmes règles :
+
+| | Dossier | Quand |
+| --- | --- | --- |
+| Module externe | `<id>/` du dépôt [cornelius-modules](https://github.com/lfpoulain/cornelius-modules) | Par défaut : tout nouveau module |
+| Module livré | `addons/<id>/` de Cornelius | Seulement pour un module indispensable au premier démarrage, mis à jour avec le cœur |
+
+« DOIT » marque une règle du contrat, « DEVRAIT » une recommandation. En cas de doute, le code fait foi : [shared/addons.ts](../../shared/addons.ts) pour les types, [server/addons/registry.ts](../../server/addons/registry.ts) pour le chargement et [server/addons/runtime.ts](../../server/addons/runtime.ts) pour l’exécution.
+
+## Choisir le mécanisme
+
+| Besoin | Mécanisme |
+| --- | --- |
+| Lire une information : météo, horaires, disponibilités, agenda | Un module, décrit ici |
+| Répondre à une question libre à partir d’un service | Un module avec un [outil à la demande](#loutil-à-la-demande) |
+| Une lecture paramétrée par la voix (« samedi », « et le SP98 ? ») | Des [arguments typés](#les-arguments-typés) sur l’outil |
+| Déclencher un effet : allumer une lampe, ouvrir un portail | Une [commande HTTP](README.md#les-commandes-http), réglée dans l’administration, sans code |
+| Piloter les appareils de Home Assistant | L’intégration [Home Assistant](../fonctionnalites/home-assistant.md) |
+| Confier une tâche longue à un agent personnel | Les [agents Hermes](../fonctionnalites/agents-hermes.md) |
+| Afficher une information sans la demander | Le champ `ambient` d’un module, plus bas |
+| Toucher à la caméra, au son ou à l’analyse d’image | Le cœur de Cornelius ; Vision et Génération d’image ne sont pas des modules de ce contrat |
+| Un nouveau type de carte, ou un outil qui agit | Une évolution du cœur, à concevoir à part |
+
+## Vocabulaire
+
+- **Module** : le code d’un dossier `addons/<id>/`, par exemple `weather`.
+- **Source** (ou instance) : un réglage de ce module pour le foyer ou une personne, par exemple « Météo à la maison ». Les sources partagent le code, pas leurs réglages ni leur cache.
+- **Relevé** (snapshot, type `ModuleSnapshot`) : l’enveloppe datée des données collectées. Elle appartient au cœur.
+- **Présentation** : le texte structuré que le module produit à partir d’un relevé. Le cœur en fait la carte et le résultat de l’outil vocal.
+
+## Responsabilités
+
+| Le module fournit | Le cœur s’occupe de |
+| --- | --- |
+| Les schémas des réglages et des données | Créer les sources, leur propriétaire, leur activation |
+| `collect` : lire, vérifier, normaliser | Le client HTTP, les secrets, l’horloge, l’annulation |
+| Les données, la source et, s’il la connaît, la date d’observation | Le relevé, ses dates, sa révision, sa persistance |
+| `present` (et `ambient.present`) : les faits de la carte et de l’oral | Le cache, le regroupement des lectures, le repli sur le dernier succès |
+| La description de l’outil vocal et la recherche assistée | La liste des sources autorisées, la session, l’affichage |
+
+Parcours d’une demande : question vocale, outil `<id>__read`, choix de la source autorisée, relevé frais en cache ou `collect`, `present`, puis carte et réponse. Aucune donnée d’un module n’est donnée au modèle à l’ouverture de la conversation.
+
+Un module NE DOIT PAS accéder à SQLite, choisir un propriétaire, construire lui-même un relevé, afficher une carte ou piloter la session. Il NE DOIT PAS faire d’appel réseau au chargement, lancer sa propre boucle de collecte, ni garder des données de source dans une variable globale modifiable.
+
+Un module s’exécute dans le processus du serveur : **ce contrat n’est pas un bac à sable**. Installer un module, c’est installer du code de confiance.
+
+## La définition `AddonDefinition`
+
+Le fichier `index.ts` DOIT exporter par défaut un objet `AddonDefinition<TConfig, TData>`.
+
+| Champ | Règle |
+| --- | --- |
+ ; les préfixes des outils du cœur (`agents`, `home_assistant`, `http`, `image`, `mail`, `memory`, `ui`, `vision`, `web`) sont réservés |
 | `apiVersion` | DOIT valoir `1` |
 | `version` | Version du code, chaîne libre (par exemple `1.0.0`) |
 | `minCoreVersion` | Facultatif : version minimale de Cornelius, `x.y.z` ; un cœur plus ancien refuse le module |
@@ -423,6 +480,7 @@ Une nouvelle `dataVersion` force une collecte, et l’ancien relevé n’est plu
 | `id` diffère du nom du dossier | Refusé : « identifiant … différent du dossier. » |
 | Un schéma ne compile pas | Refusé, avec la première erreur d’Ajv |
 | Un module externe reprend l’identifiant d’un module livré | Refusé : « identifiant déjà pris par un module livré avec Cornelius. » |
+| L’identifiant est un préfixe d’outil du cœur (`mail`, `image`…) | Refusé : « identifiant réservé à un outil de Cornelius. » |
 | `minCoreVersion` dépasse la version installée | Refusé : « nécessite Cornelius … ou plus récent (installé : …). » |
 | `display.icon` hors de la liste | Refusé : « icône « … » inconnue. » |
 | Un argument d’outil mal déclaré | Refusé au chargement (« argument « … » : bornes entières attendues. ») |

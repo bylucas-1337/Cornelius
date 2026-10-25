@@ -80,7 +80,8 @@ const weatherFixtureBody = JSON.stringify(weatherFixture);
 const departuresBody = JSON.stringify(departuresFixture);
 
 /** Les modules sont découverts comme en production : aucun registre écrit à la main. */
-const addonRegistry = (await loadAddons()).addons;
+// Modules livrés seulement : un dépôt cornelius-modules cloné à côté ne change pas ces tests.
+const addonRegistry = (await loadAddons({ externalRoot: null })).addons;
 
 test('le registre découvre les modules du dossier addons et applique le contrat v1', () => {
   // Au moins les modules livrés : un module ajouté dans addons/ ne doit pas casser ce test.

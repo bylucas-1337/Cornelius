@@ -30,6 +30,7 @@ const validate = compile<{
         width: { type: 'integer', minimum: 1, maximum: 8192 },
         height: { type: 'integer', minimum: 1, maximum: 8192 },
         fps: { type: 'integer', minimum: 1, maximum: 240 },
+        rotate180: { type: 'boolean' },
       },
     },
     actual: {
@@ -154,7 +155,7 @@ export class CameraBridge {
     this.cancelFrame('Changement de résolution.');
     this.state.mode = { ...mode };
     if (this.sender) {
-      // La perception rouvre la caméra : même attente qu’un changement de périphérique.
+      // La perception rouvre la caméra (sauf simple retournement) : même attente qu’un changement de périphérique.
       const requestId = randomUUID();
       this.send({ type: 'camera_mode', mode, requestId });
       if (this.state.selectedId)
@@ -171,13 +172,14 @@ export class CameraBridge {
     if (event.mode) this.state.mode = event.mode;
     this.state.actual = event.actual ?? null;
     if (this.selection && event.requestId === this.selection.requestId) {
-      if (!event.error && event.selectedId === this.selection.id)
+      if (!event.error && event.selectedId === this.selection.id && event.selectedId !== 'browser')
         this.db
           .prepare('UPDATE camera_preferences SET device_id = ? WHERE id = 1')
           .run(event.selectedId);
       this.selection = null;
       this.state.changing = false;
     }
+    if (event.selectedId === 'browser') this.restored = true;
     if (!this.restored) {
       this.restored = true;
       // Résolution enregistrée envoyée à une perception qui démarre (ou ancienne : sans effet).
@@ -186,7 +188,8 @@ export class CameraBridge {
         event.mode &&
         (event.mode.width !== mode.width ||
           event.mode.height !== mode.height ||
-          event.mode.fps !== mode.fps)
+          event.mode.fps !== mode.fps ||
+          !!event.mode.rotate180 !== !!mode.rotate180)
       )
         this.send({ type: 'camera_mode', mode });
       const saved = this.db

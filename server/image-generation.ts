@@ -513,22 +513,27 @@ export class ImageGeneration {
     }
   }
 
-  /** Réaffiche une image gardée en mémoire : celles du foyer, ou de la même personne. */
-  recall(args: unknown, profileId: string | null): ImageGenerationOutcome {
-    if (!this.enabled) return failure('La génération d’image est désactivée.', 'forbidden');
-    if (!validateRecall(args)) return failure('Demande de rappel invalide.', 'invalid_params');
+  /**
+   * Image demandée parmi celles du foyer ou de la même personne, illustrations exclues : par
+   * quelques mots du sujet, sinon par position (1 pour la plus récente).
+   */
+  private pick(
+    input: RecallInput,
+    profileId: string | null,
+    verb: string,
+  ): { image: StoredImage; position: number } | { summary: string } {
     const images = this.stored
       .filter(
         (image) => !image.automatic && (image.profileId === null || image.profileId === profileId),
       )
       .reverse();
     if (images.length === 0)
-      return failure(
-        'Aucune image récente à réafficher : les trois dernières sont effacées au redémarrage.',
-      );
+      return {
+        summary: `Aucune image récente à ${verb} : les trois dernières sont effacées au redémarrage.`,
+      };
     let image: StoredImage | undefined;
-    if (args.search !== null) {
-      const wanted = words(args.search);
+    if (input.search !== null) {
+      const wanted = words(input.search);
       const ranked = images
         .map((candidate) => ({
           candidate,
@@ -538,16 +543,49 @@ export class ImageGeneration {
         .sort((a, b) => b.score - a.score);
       image = ranked[0]?.candidate;
       if (!image)
-        return failure(
-          'Aucune image récente ne correspond. Images disponibles, de la plus récente à la plus ancienne : ' +
+        return {
+          summary:
+            'Aucune image récente ne correspond. Images disponibles, de la plus récente à la plus ancienne : ' +
             images.map((entry, index) => `${index + 1}. ${entry.prompt.slice(0, 80)}`).join(' ; '),
-        );
-    } else image = images[(args.position ?? 1) - 1];
+        };
+    } else image = images[(input.position ?? 1) - 1];
     if (!image || !this.generatedFile(image.id))
-      return failure(
-        `Il n’y a que ${images.length} image${images.length > 1 ? 's' : ''} récente${images.length > 1 ? 's' : ''} à réafficher.`,
+      return {
+        summary: `Il n’y a que ${images.length} image${images.length > 1 ? 's' : ''} récente${images.length > 1 ? 's' : ''} à ${verb}.`,
+      };
+    return { image, position: images.indexOf(image) + 1 };
+  }
+
+  /**
+   * Fichier d’une image à joindre à un e-mail. Sans position ni recherche, l’image affichée
+   * (illustration comprise) passe en premier, si elle est visible pour cette personne.
+   */
+  attachment(
+    profileId: string | null,
+    input: RecallInput & { shownId: string | null },
+  ): { image: { id: string; prompt: string; path: string } } | { summary: string } {
+    if (input.position === null && input.search === null && input.shownId) {
+      const shown = this.stored.find(
+        (image) =>
+          image.id === input.shownId && (image.profileId === null || image.profileId === profileId),
       );
-    const position = images.indexOf(image) + 1;
+      const path = shown ? this.generatedFile(shown.id) : null;
+      if (shown && path) return { image: { id: shown.id, prompt: shown.prompt, path } };
+    }
+    const picked = this.pick(input, profileId, 'envoyer');
+    if (!('image' in picked)) return picked;
+    const path = this.generatedFile(picked.image.id);
+    if (!path) return { summary: 'L’image n’est plus disponible.' };
+    return { image: { id: picked.image.id, prompt: picked.image.prompt, path } };
+  }
+
+  /** Réaffiche une image gardée en mémoire : celles du foyer, ou de la même personne. */
+  recall(args: unknown, profileId: string | null): ImageGenerationOutcome {
+    if (!this.enabled) return failure('La génération d’image est désactivée.', 'forbidden');
+    if (!validateRecall(args)) return failure('Demande de rappel invalide.', 'invalid_params');
+    const picked = this.pick(args, profileId, 'réafficher');
+    if (!('image' in picked)) return failure(picked.summary);
+    const { image, position } = picked;
     return {
       card: this.card(image.id, image.prompt, image.model),
       tool: {

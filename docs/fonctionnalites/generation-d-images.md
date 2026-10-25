@@ -107,6 +107,10 @@ Les trois dernières images demandées peuvent être réaffichées à la voix, s
 
 Une image créée pour une personne reconnue n’est remontrée que pour elle. Une image créée sans personne reconnue est commune. Les illustrations automatiques ne se remontrent pas.
 
+## Envoyer une image
+
+Avec le module **E-mail**, « Envoie-moi cette image » ou « Envoie l’image du phare à Baptiste » envoie l’image affichée, ou l’une des trois dernières, en pièce jointe, aux seuls destinataires réglés dans l’administration. Les mêmes règles de partage s’appliquent : une image créée pour une personne ne part que si Cornelius la reconnaît. Voir [L’envoi par e-mail](envoi-par-e-mail.md).
+
 ## Ce qui est conservé
 
 - Les images sont rangées dans `data/generated-images/`. Il y en a au plus trois, illustrations comprises : au-delà, une illustration part en premier, puis l’image la plus ancienne.
@@ -128,6 +132,7 @@ La carte **État du système → Génération d’image** montre si l’outil es
 
 - [La carte graphique](../installation/gpu.md)
 - [La vision locale](vision-locale.md)
+- [L’envoi par e-mail](envoi-par-e-mail.md)
 - [L’administration](../utilisation/administration.md)
 - [Configuration](../reference/configuration.md)
 - [Licences](../reference/licences.md)

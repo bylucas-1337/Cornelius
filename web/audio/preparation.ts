@@ -1,4 +1,4 @@
-import { audioPreferences } from './preferences';
+import { audioPreferences, captureKey } from './preferences';
 
 type Preparation = { ready: boolean; busy: boolean; error: string | null };
 let state: Preparation = { ready: false, busy: false, error: null };
@@ -7,7 +7,7 @@ let microphone: MediaStream | null = null;
 let pending: Promise<void> | null = null;
 let generation = 0;
 let permission: PermissionStatus | null = null;
-let preparedDevice = '';
+let preparedCapture = '';
 let releaseTimer: ReturnType<typeof setTimeout> | null = null;
 let suspendedTimer: ReturnType<typeof setTimeout> | null = null;
 // Au-delà, une suspension n’est plus un changement de sortie ou une mise en veille brève.
@@ -105,7 +105,7 @@ export function releaseAudioContext(value: AudioContext) {
   if (value !== context) void value.close();
 }
 export function takePreparedMicrophone() {
-  if (preparedDevice !== audioPreferences().microphone) releasePreparedMicrophone();
+  if (preparedCapture !== captureKey()) releasePreparedMicrophone();
   if (releaseTimer) clearTimeout(releaseTimer);
   releaseTimer = null;
   const stream = microphone;
@@ -117,12 +117,13 @@ export function takePreparedMicrophone() {
   return stream;
 }
 export function microphoneConstraints(): MediaStreamConstraints {
-  const { microphone: device } = audioPreferences();
+  const { microphone: device, noiseSuppression, autoGainControl } = audioPreferences();
   return {
     audio: {
+      // Toujours active : GPT-Live écoute pendant qu’il parle et compte sur l’écho retiré ici.
       echoCancellation: true,
-      noiseSuppression: true,
-      autoGainControl: true,
+      noiseSuppression,
+      autoGainControl,
       channelCount: 1,
       ...(device ? { deviceId: { exact: device } } : {}),
     },
@@ -150,7 +151,7 @@ export function prepareAudio(): Promise<void> {
   pending = (async () => {
     try {
       if (!microphone) {
-        preparedDevice = audioPreferences().microphone;
+        preparedCapture = captureKey();
         const stream = await navigator.mediaDevices.getUserMedia(microphoneConstraints());
         if (revision !== generation) {
           stream.getTracks().forEach((track) => track.stop());

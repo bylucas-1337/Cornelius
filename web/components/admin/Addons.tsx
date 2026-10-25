@@ -24,6 +24,7 @@ import { Actions } from './Actions';
 import { HomeAssistantSettings } from './HomeAssistant';
 import { VisionSettings } from './VisionSettings';
 import { ImageGenerationSettings } from './ImageGenerationSettings';
+import { MailSettings } from './MailSettings';
 import { WebSearchSettings } from './WebSearchSettings';
 import { CardSettings } from './CardSettings';
 import { Label } from '../ui/label';
@@ -83,7 +84,8 @@ const moduleGroups: { id: GroupId; title: string; description: string }[] = [
   {
     id: 'capabilities',
     title: 'Capacités de Cornelius',
-    description: 'Ce que Cornelius sait faire en plus : chercher sur le web, voir et dessiner.',
+    description:
+      'Ce que Cornelius sait faire en plus : chercher sur le web, voir, dessiner et envoyer par e-mail.',
   },
 ];
 
@@ -133,6 +135,13 @@ const builtIns = [
     group: 'capabilities',
     name: 'Génération d’image',
     keywords: 'images génération dessin illustration création',
+    householdOnly: false,
+  },
+  {
+    id: 'mail',
+    group: 'capabilities',
+    name: 'E-mail',
+    keywords: 'e-mail mail courriel smtp envoyer téléphone image pièce jointe gmail destinataires',
     householdOnly: false,
   },
 ] as const satisfies readonly {
@@ -286,6 +295,8 @@ export function Addons({
         return <CardSettings key={entry.id} {...props} state={state} run={run} />;
       if (entry.id === 'vision')
         return <VisionSettings key={entry.id} {...props} status={status} run={run} />;
+      if (entry.id === 'mail')
+        return <MailSettings key={entry.id} {...props} profiles={profiles} run={run} />;
       return <ImageGenerationSettings key={entry.id} {...props} status={status} run={run} />;
     }
     const definition = entry.definition;
@@ -596,6 +607,7 @@ function MissingSecret({
           inline
           secret={{
             env: secret.env,
+            group: 'modules',
             label: label.charAt(0).toUpperCase() + label.slice(1),
             usedBy: '',
             url: secret.url,

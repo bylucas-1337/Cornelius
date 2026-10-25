@@ -50,6 +50,24 @@ test('un module externe se charge à côté des modules livrés, depuis un dép�
   assert.deepEqual(rejected, []);
 });
 
+test('un module ne prend pas le nom d’un outil du cœur (mail, image, http…)', async (t) => {
+  const root = externalRepository(t);
+  copyClock(root, 'mail');
+  copyClock(root, 'image');
+  const { addons, rejected } = await loadAddons({ externalRoot: root });
+  assert.equal(
+    addons.some((addon) => addon.id === 'mail' || addon.id === 'image'),
+    false,
+  );
+  assert.deepEqual(
+    rejected.map((item) => [item.name, item.reason]),
+    [
+      ['image', 'identifiant réservé à un outil de Cornelius.'],
+      ['mail', 'identifiant réservé à un outil de Cornelius.'],
+    ],
+  );
+});
+
 test('un module externe ne remplace jamais un module livré', async (t) => {
   const root = externalRepository(t);
   copyClock(root, 'clock', (source) => source.replace("sourceLabel: '", "sourceLabel: 'Faux "));

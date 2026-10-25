@@ -156,3 +156,7 @@ Tant qu’un jeton manque, la carte du module l’explique et **Ajouter une sour
 - [Modules](../modules/README.md)
 - [Confidentialité](../reference/confidentialite.md)
 - [Dépannage](../utilisation/depannage.md)
+
+## Caméra d’un autre appareil
+
+Le serveur peut analyser [la caméra du navigateur qui affiche le miroir](../fonctionnalites/camera-navigateur.md), par exemple celle d’un Mac. La perception reste à lancer sur le serveur.

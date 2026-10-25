@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
+import type { BrowserCameraConfig } from '../shared/camera';
 import type { DevicesStatus, ServerEvent, StateEvent } from '../shared/types';
 import { api, errorMessage, type Role } from './api';
 
@@ -16,6 +17,7 @@ export function useMirror(role: Role) {
   const [online, setOnline] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [authenticationExpired, setAuthenticationExpired] = useState(false);
+  const [cameraConfig, setCameraConfig] = useState<BrowserCameraConfig | null>(null);
   const [devices, setDevices] = useState<DevicesStatus | null>(null);
   const latest = useRef<StateEvent | null>(null);
   const receivedAt = useRef(0);
@@ -145,6 +147,10 @@ export function useMirror(role: Role) {
         try {
           const message = JSON.parse(String(data)) as ServerEvent;
           if (message.schemaVersion !== 1) return;
+          if (message.type === 'camera_config') {
+            if (role === 'kiosk') setCameraConfig(message);
+            return;
+          }
           if (message.type === 'devices') {
             if (role === 'admin') setDevices(message.status);
             return;
@@ -251,6 +257,7 @@ export function useMirror(role: Role) {
     online,
     fresh: synchronized && online,
     devices,
+    cameraConfig,
     error,
     interrupted,
     reconnect,

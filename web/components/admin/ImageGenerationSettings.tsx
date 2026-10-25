@@ -1,4 +1,4 @@
-import { useState, type ReactNode } from 'react';
+import { useEffect, useState, type ReactNode } from 'react';
 import {
   CheckCircle2,
   Cloud,
@@ -157,7 +157,10 @@ const providers: {
   },
 ];
 
-/** Où créer les images : sur ce PC ou par l’API d’images d’OpenAI. */
+/**
+ * Où créer les images : sur ce PC ou par l’API d’images d’OpenAI. Le choix fait reste coché
+ * jusqu’à ce que l’état du serveur le confirme, ou revient à la valeur enregistrée s’il échoue.
+ */
 function ProviderChoice({
   value,
   disabled,
@@ -165,8 +168,12 @@ function ProviderChoice({
 }: {
   value: ImageGenerationProvider;
   disabled?: boolean;
-  onChange: (provider: ImageGenerationProvider) => void;
+  onChange: (provider: ImageGenerationProvider) => Promise<boolean>;
 }) {
+  const [shown, setShown] = useState<ImageGenerationProvider | null>(null);
+  // L’état du serveur a changé (ce choix confirmé, ou un autre fait ailleurs) : il l’emporte.
+  useEffect(() => setShown(null), [value]);
+  const current = shown ?? value;
   return (
     <fieldset className="space-y-2" disabled={disabled}>
       <legend className="text-sm font-medium">Où créer les images</legend>
@@ -185,11 +192,16 @@ function ProviderChoice({
                 type="radio"
                 name="image-generation-provider"
                 value={provider.id}
-                checked={value === provider.id}
+                checked={current === provider.id}
                 aria-labelledby={`image-provider-${provider.id}-label`}
                 aria-describedby={`image-provider-${provider.id}-detail`}
                 className="mt-1 size-4 shrink-0 accent-primary"
-                onChange={() => onChange(provider.id)}
+                onChange={() => {
+                  setShown(provider.id);
+                  void onChange(provider.id).then((ok) => {
+                    if (!ok) setShown(null);
+                  });
+                }}
               />
               <span className="min-w-0 space-y-1">
                 <span
@@ -551,7 +563,7 @@ export function ImageGenerationSettings({
         value={provider}
         disabled={!generation || generation.busy}
         onChange={(next) =>
-          void run(
+          run(
             next === 'openai'
               ? 'Les images seront créées par OpenAI.'
               : next === 'gemini'

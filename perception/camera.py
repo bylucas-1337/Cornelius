@@ -12,7 +12,7 @@ from cv2_enumerate_cameras import enumerate_cameras
 # Résolutions et cadences proposées dans l’administration ; 1280 x 720 à 30 i/s par défaut.
 RESOLUTIONS = ((640, 480), (1280, 720), (1920, 1080))
 FRAME_RATES = (15, 30)
-DEFAULT_MODE = {"width": 1280, "height": 720, "fps": 30}
+DEFAULT_MODE = {"width": 1280, "height": 720, "fps": 30, "rotate180": False}
 
 
 def valid_mode(mode):
@@ -21,6 +21,17 @@ def valid_mode(mode):
         and (mode.get("width"), mode.get("height")) in RESOLUTIONS
         and mode.get("fps") in FRAME_RATES
     )
+
+
+def clean_mode(mode):
+    """Mode validé, réduit aux clés connues ; rotate180 absent vaut une caméra à l’endroit."""
+    return {"width": mode["width"], "height": mode["height"], "fps": mode["fps"],
+            "rotate180": mode.get("rotate180") is True}
+
+
+def same_capture(a, b):
+    """Même résolution et cadence : seule l’orientation change, la caméra reste ouverte."""
+    return all(a[key] == b[key] for key in ("width", "height", "fps"))
 
 
 class Camera:
@@ -45,7 +56,7 @@ class Camera:
     def enable(self, preferred=None, mode=None):
         """Allume la caméra choisie dans l’administration (sinon celle de CORNELIUS_CAMERA_INDEX)."""
         if valid_mode(mode):
-            self.mode = {"width": mode["width"], "height": mode["height"], "fps": mode["fps"]}
+            self.mode = clean_mode(mode)
         self.refresh()
         if preferred in self.devices:
             return self.select(preferred)
@@ -107,14 +118,20 @@ class Camera:
         height, width = frame.shape[:2]
         fps = capture.get(cv2.CAP_PROP_FPS)
         self.actual = {"width": int(width), "height": int(height), "fps": round(fps) if fps and fps > 0 else None}
-        return capture, frame
+        return capture, self.oriented(frame)
+
+    def oriented(self, frame):
+        """Caméra montée tête en bas : l’image est remise à l’endroit avant toute analyse."""
+        return cv2.rotate(frame, cv2.ROTATE_180) if frame is not None and self.mode["rotate180"] else frame
 
     def set_mode(self, mode):
         """Nouvelle résolution ou cadence : la caméra choisie est rouverte avec elle."""
         if not valid_mode(mode):
             return self.status()
         with self.lock:
-            self.mode = {"width": mode["width"], "height": mode["height"], "fps": mode["fps"]}
+            previous, self.mode = self.mode, clean_mode(mode)
+            if same_capture(previous, self.mode):
+                return self.status()
             device_id = self.selected_id
             if device_id is None:
                 return self.status()
@@ -155,6 +172,7 @@ class Camera:
     def read(self):
         with self.lock:
             ok, frame = self.capture.read() if self.capture else (False, None)
+            frame = self.oriented(frame) if ok else frame
             captured = int(time.time() * 1000)
             self.latest = frame if ok else None
             self.latest_at = time.monotonic() if ok else 0

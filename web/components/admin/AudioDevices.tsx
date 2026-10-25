@@ -1,5 +1,5 @@
-import { useEffect, useState } from 'react';
-import { CheckCircle2, Volume2 } from 'lucide-react';
+import { useEffect, useRef, useState } from 'react';
+import { CheckCircle2, Mic, Volume2 } from 'lucide-react';
 import { errorMessage } from '../../api';
 import { previewAdmissionSound } from '../../audio/admission-sound';
 import {
@@ -7,12 +7,18 @@ import {
   saveAudioPreferences,
   type AudioPreferences,
 } from '../../audio/preferences';
-import { prepareAudio, releasePreparedMicrophone } from '../../audio/preparation';
+import {
+  microphoneConstraints,
+  prepareAudio,
+  releasePreparedMicrophone,
+} from '../../audio/preparation';
 import type { RunAction } from './types';
 import { Field } from './shared';
 import { Button } from '../ui/button';
 import { Card, CardHeader, CardTitle, CardDescription, CardContent } from '../ui/card';
+import { Label } from '../ui/label';
 import { NativeSelect, NativeSelectOption } from '../ui/native-select';
+import { Switch } from '../ui/switch';
 import { Alert, AlertDescription } from '../ui/alert';
 
 const fields = [
@@ -30,6 +36,32 @@ const fields = [
   },
 ] as const;
 
+// GPT-Live n’a aucun réglage d’écoute : seuls les traitements du navigateur se choisissent.
+const processing = [
+  {
+    key: 'noiseSuppression',
+    label: 'Réduction du bruit du navigateur',
+    detail:
+      'GPT-Live ignore déjà le bruit ambiant. Si Cornelius vous comprend mal, essayez sans : ce filtre peut abîmer la voix.',
+    on: 'Réduction du bruit du navigateur : activée.',
+    off: 'Réduction du bruit du navigateur : désactivée.',
+  },
+  {
+    key: 'autoGainControl',
+    label: 'Gain automatique du micro',
+    detail:
+      'Relève le micro dans les silences, et avec lui la voix de Cornelius qui revient par le haut-parleur. S’il s’entend lui-même ou se laisse mal couper, essayez sans, et réglez le volume du micro dans le système.',
+    on: 'Gain automatique du micro : activé.',
+    off: 'Gain automatique du micro : désactivé.',
+  },
+] as const;
+
+const testSeconds = 10;
+type Applied = Pick<
+  MediaTrackSettings,
+  'echoCancellation' | 'noiseSuppression' | 'autoGainControl'
+>;
+
 export function AudioDevices({
   active,
   run,
@@ -43,6 +75,9 @@ export function AudioDevices({
   const [error, setError] = useState<string | null>(null);
   const [checking, setChecking] = useState(false);
   const [authorized, setAuthorized] = useState(false);
+  const [level, setLevel] = useState<number | null>(null);
+  const [applied, setApplied] = useState<Applied | null>(null);
+  const stopTest = useRef<(() => void) | null>(null);
 
   useEffect(() => {
     const media = navigator.mediaDevices;
@@ -71,6 +106,12 @@ export function AudioDevices({
     };
   }, []);
 
+  useEffect(() => () => stopTest.current?.(), []);
+  // Une conversation qui s’ouvre reprend le micro.
+  useEffect(() => {
+    if (active) stopTest.current?.();
+  }, [active]);
+
   async function authorizeMicrophone() {
     const media = navigator.mediaDevices;
     if (!media) {
@@ -92,12 +133,75 @@ export function AudioDevices({
     }
   }
 
+  /** Micro ouvert quelques secondes avec les réglages du miroir, pour lire son niveau. */
+  async function testMicrophone() {
+    const media = navigator.mediaDevices;
+    if (!media) {
+      setError('Ce navigateur ne donne pas accès aux périphériques audio.');
+      return;
+    }
+    setError(null);
+    releasePreparedMicrophone();
+    let stream: MediaStream;
+    try {
+      stream = await media.getUserMedia(microphoneConstraints());
+    } catch (failure) {
+      setError(errorMessage(failure));
+      return;
+    }
+    setAuthorized(true);
+    const settings = stream.getAudioTracks()[0]?.getSettings() ?? {};
+    setApplied({
+      echoCancellation: settings.echoCancellation,
+      noiseSuppression: settings.noiseSuppression,
+      autoGainControl: settings.autoGainControl,
+    });
+    const context = new AudioContext();
+    const meter = context.createAnalyser();
+    meter.fftSize = 1024;
+    context.createMediaStreamSource(stream).connect(meter);
+    const samples = new Float32Array(meter.fftSize);
+    let frame = 0;
+    const stop = () => {
+      cancelAnimationFrame(frame);
+      clearTimeout(timer);
+      stream.getTracks().forEach((track) => track.stop());
+      void context.close();
+      stopTest.current = null;
+      setLevel(null);
+    };
+    const timer = setTimeout(stop, testSeconds * 1000);
+    stopTest.current = stop;
+    const tick = () => {
+      meter.getFloatTimeDomainData(samples);
+      const rms = Math.sqrt(
+        samples.reduce((sum, value) => sum + value * value, 0) / samples.length,
+      );
+      // Même échelle que l’orbe du miroir.
+      setLevel(Math.min(1, rms * 5));
+      frame = requestAnimationFrame(tick);
+    };
+    tick();
+  }
+
   function choose(field: (typeof fields)[number], value: string) {
     const next: AudioPreferences = { ...preferences, [field.key]: value };
     setPreferences(next);
     void run(field.saved, async () => saveAudioPreferences(next), {
       key: 'audio-' + field.key,
       payload: value,
+    });
+  }
+
+  function toggle(field: (typeof processing)[number], enabled: boolean) {
+    const next: AudioPreferences = { ...preferences, [field.key]: enabled };
+    setPreferences(next);
+    // Un test en cours garde les anciens réglages : il s’arrête pour être relancé.
+    stopTest.current?.();
+    setApplied(null);
+    void run(enabled ? field.on : field.off, async () => saveAudioPreferences(next), {
+      key: 'audio-' + field.key,
+      payload: enabled,
     });
   }
 
@@ -170,22 +274,74 @@ export function AudioDevices({
             </Field>
           ))}
         </div>
-        <div>
+        {/* Un oui ou non : un interrupteur, enregistré au clic. */}
+        <div className="space-y-3">
+          {processing.map((field) => (
+            <div key={field.key} className="flex items-start justify-between gap-4">
+              <div className="space-y-1">
+                <Label htmlFor={'audio-' + field.key}>{field.label}</Label>
+                <p id={'audio-' + field.key + '-detail'} className="text-xs text-muted-foreground">
+                  {field.detail}
+                </p>
+              </div>
+              <Switch
+                id={'audio-' + field.key}
+                aria-describedby={'audio-' + field.key + '-detail'}
+                checked={preferences[field.key]}
+                onCheckedChange={(enabled) => toggle(field, enabled)}
+              />
+            </div>
+          ))}
+        </div>
+        <div className="flex flex-wrap gap-3">
           <Button variant="outline" onClick={() => void previewAdmissionSound('carillon')}>
             <Volume2 />
             Tester le haut-parleur
           </Button>
+          <Button
+            variant="outline"
+            disabled={active}
+            onClick={() => {
+              if (stopTest.current) stopTest.current();
+              else void testMicrophone();
+            }}
+          >
+            <Mic />
+            {level === null ? 'Tester le micro' : 'Arrêter le test'}
+          </Button>
         </div>
+        {level !== null && (
+          <div className="space-y-1">
+            <progress aria-label="Niveau du micro" className="w-full" max={1} value={level} />
+            <p className="text-xs text-muted-foreground">
+              Parlez à votre distance habituelle du miroir : la barre doit bien bouger sans rester
+              collée au bout. Le test s’arrête seul après {testSeconds} secondes.
+            </p>
+          </div>
+        )}
+        {applied && (
+          <p className="text-xs text-muted-foreground">
+            Appliqué par le navigateur : annulation d’écho {onOff(applied.echoCancellation)},
+            réduction du bruit {onOff(applied.noiseSuppression)}, gain automatique{' '}
+            {onOff(applied.autoGainControl)}.
+          </p>
+        )}
         {error && (
           <Alert variant="destructive">
             <AlertDescription>{error}</AlertDescription>
           </Alert>
         )}
         <p className="text-xs text-muted-foreground">
-          Le microphone n’est allumé que le temps de la vérification. L’annulation d’écho et la
-          réduction du bruit sont demandées au navigateur.
+          Le microphone n’est allumé que le temps de la vérification ou du test. L’annulation d’écho
+          reste toujours active ; elle retire mieux le son quand les haut-parleurs sont la sortie
+          par défaut du système, à distance du micro et pas tournés vers lui.
         </p>
       </CardContent>
     </Card>
   );
+}
+
+/** Réglage tel que le navigateur l’a appliqué, parfois absent de ses réponses. */
+function onOff(value: unknown): string {
+  return value === true ? 'oui' : value === false ? 'non' : 'inconnue';
 }

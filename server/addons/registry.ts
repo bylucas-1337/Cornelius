@@ -37,6 +37,18 @@ export interface AddonLoadReport {
 const entryFile = 'index.ts';
 /** Un identifiant devient un nom d'outil (`<id>__<tool>`) : alphabet strict exigé. */
 const idPattern = /^[a-z][a-z0-9_]{0,31}$/;
+/** Préfixes des outils du cœur (`mail__send`, `image__recall`…) : un module n’en prend aucun. */
+export const reservedAddonIds: ReadonlySet<string> = new Set([
+  'agents',
+  'home_assistant',
+  'http',
+  'image',
+  'mail',
+  'memory',
+  'ui',
+  'vision',
+  'web',
+]);
 const repository = resolve(dirname(fileURLToPath(import.meta.url)), '..', '..');
 /** Racine `addons/` déduite de ce fichier : le registre suit le dépôt, pas le cwd. */
 const root = resolve(repository, 'addons');
@@ -345,6 +357,11 @@ async function loadDirectory(
     const entry = resolve(directory, entryFile);
     if (!existsSync(entry)) {
       if (!external) rejected.push({ name, reason: `point d’entrée « ${entryFile} » absent.` });
+      continue;
+    }
+    if (reservedAddonIds.has(name)) {
+      rejected.push({ name, reason: 'identifiant réservé à un outil de Cornelius.' });
+      logs?.write('warn', 'addon', 'Module refusé : identifiant réservé', { addonId: name });
       continue;
     }
     if (external && addons.some((addon) => addon.id === name)) {

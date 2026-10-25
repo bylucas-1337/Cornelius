@@ -11,6 +11,8 @@ import { randomUUID } from 'node:crypto';
 import type { DatabaseSync } from 'node:sqlite';
 import type { WebSocket } from 'ws';
 import type { SessionController } from './controller.js';
+import { BrowserCameraRelay } from './browser-camera.js';
+import type { BrowserCameraConfig, CameraSource } from '../shared/camera.js';
 import { CameraBridge } from './camera.js';
 import type { CameraMode } from '../shared/camera.js';
 import { validateObservation } from '../shared/commands.js';
@@ -77,7 +79,9 @@ export interface VisionPort {
 
 export class PerceptionBridge {
   readonly camera: CameraBridge;
+  readonly browserCamera: BrowserCameraRelay;
   private worker: WebSocket | null = null;
+  private browserCameraSupported = false;
   private vision: VisionPort | null = null;
   // Profils existants : une observation ne peut pas attribuer un profil supprimé ou inventé.
   private knownProfiles = new Set<string>();
@@ -110,6 +114,21 @@ export class PerceptionBridge {
     private changed: () => void,
     private now = Date.now,
   ) {
+    this.browserCamera = new BrowserCameraRelay(
+      () =>
+        this.cameraSource() === 'browser' &&
+        this.browserCameraSupported &&
+        this.worker?.readyState === 1 &&
+        this.cameraApplied === true,
+      (frame) => {
+        if (!this.worker || this.worker.readyState !== 1 || this.worker.bufferedAmount > 256_000)
+          return false;
+        this.worker.send(frame);
+        return true;
+      },
+      () => this.send({ type: 'browser_camera_reset' }),
+      now,
+    );
     this.camera = new CameraBridge(db, changed, now);
     this.engagement = JSON.parse(
       String(
@@ -126,7 +145,7 @@ export class PerceptionBridge {
     return {
       recognitionThreshold: this.recognitionThreshold,
       engagement: { ...this.engagement },
-      camera: this.camera.snapshot(),
+      camera: { ...this.camera.snapshot(), source: this.cameraSource() },
       connected: this.worker?.readyState === 1,
       enrollingProfileId: this.enrollment?.profileId ?? null,
       enrollmentMode: this.enrollment?.mode ?? null,
@@ -199,6 +218,7 @@ export class PerceptionBridge {
   connect(socket: WebSocket) {
     this.worker?.close(1008, 'Perception remplacée.');
     this.worker = socket;
+    this.browserCameraSupported = false;
     this.camera.connect((value) => this.send(value));
     const cameraEnabled = this.wantsCamera();
     this.cameraApplied = cameraEnabled;
@@ -225,7 +245,15 @@ export class PerceptionBridge {
       }
       try {
         const event = JSON.parse(data.toString());
-        if (event.type === 'observation' && validateObservation(event.observation))
+        if (event.type === 'camera_source_status' && event.source === this.cameraSource()) {
+          this.browserCameraSupported = event.source === 'browser';
+          this.diagnostic = null;
+          this.changed();
+        } else if (
+          event.type === 'observation' &&
+          (this.cameraSource() !== 'browser' || this.browserCameraSupported) &&
+          validateObservation(event.observation)
+        )
           this.controller.observe(this.withKnownProfiles(event.observation));
         else if (
           event.type === 'vad' &&
@@ -280,7 +308,14 @@ export class PerceptionBridge {
           this.wakeStreams.get(event.streamId)!.detected(event.score);
         } else if (event.type === 'recognition_live') this.receiveLive(event);
         else if (event.type === 'enrolled') this.completeEnrollment(event);
-        else if (event.type === 'camera_status') this.camera.receive(event);
+        else if (event.type === 'camera_frame_ack') {
+          if (event.accepted === false) this.browserCamera.close(1013);
+          else this.browserCamera.acknowledge(event.sequence);
+        } else if (
+          event.type === 'camera_status' &&
+          (this.cameraSource() !== 'browser' || this.browserCameraSupported)
+        )
+          this.camera.receive(event);
         else if (event.type === 'vision_status' || event.type === 'vision_result')
           this.vision?.receive(event);
       } catch {
@@ -288,10 +323,12 @@ export class PerceptionBridge {
         this.changed();
       }
     });
+    this.send({ type: 'camera_source', source: this.cameraSource() });
     this.send(this.cameraEnabledEvent(cameraEnabled));
     socket.on('error', () => socket.close());
     socket.on('close', () => {
       if (this.worker !== socket) return;
+      this.browserCamera.close(1013);
       this.worker = null;
       this.cameraApplied = null;
       this.wakeReady = false;
@@ -303,8 +340,41 @@ export class PerceptionBridge {
       this.changed();
     });
   }
+  cameraSource(): CameraSource {
+    return this.db.prepare('SELECT source FROM camera_source WHERE id = 1').get()?.source ===
+      'browser'
+      ? 'browser'
+      : 'server';
+  }
+  browserCameraConfig(): BrowserCameraConfig {
+    return {
+      schemaVersion: 1,
+      type: 'camera_config',
+      source: this.cameraSource(),
+      enabled:
+        this.worker?.readyState === 1 &&
+        this.cameraApplied === true &&
+        (this.cameraSource() !== 'browser' || this.browserCameraSupported),
+      mode: this.camera.savedMode(),
+    };
+  }
+  setCameraSource(source: CameraSource) {
+    if (this.enrollment) throw new Error('Attendez la fin de l’enregistrement du visage.');
+    if (source === this.cameraSource()) return;
+    this.browserCamera.close();
+    this.browserCameraSupported = false;
+    this.diagnostic =
+      source === 'browser'
+        ? 'En attente de la perception compatible avec la caméra du navigateur.'
+        : null;
+    this.camera.suspend();
+    this.db.prepare('UPDATE camera_source SET source = ? WHERE id = 1').run(source);
+    this.send({ type: 'camera_source', source });
+    this.setCameraEnabled(this.wantsCamera());
+  }
   setCameraEnabled(enabled: boolean): void {
     this.cameraApplied = enabled;
+    if (!enabled) this.browserCamera.close();
     if (enabled) this.camera.resume();
     else {
       this.camera.suspend();
@@ -323,7 +393,7 @@ export class PerceptionBridge {
       ? {
           type: 'camera_enabled',
           enabled,
-          deviceId: this.camera.savedDevice(),
+          deviceId: this.cameraSource() === 'browser' ? 'browser' : this.camera.savedDevice(),
           mode: this.camera.savedMode(),
         }
       : { type: 'camera_enabled', enabled };
@@ -622,6 +692,7 @@ export class PerceptionBridge {
   }
   tick() {
     this.camera.tick();
+    this.browserCamera.tick();
     // Fin d’un maintien pour réglage : la règle habituelle reprend la main.
     this.syncCamera();
     const session = this.controller.sessionState();
@@ -658,6 +729,7 @@ export class PerceptionBridge {
     if (this.worker.bufferedAmount < 16_384) this.worker.send(pcm);
   }
   dispose() {
+    this.browserCamera.close();
     this.camera.disconnect();
     this.worker?.close(1001, 'Arrêt du serveur');
     this.worker = null;

@@ -1,8 +1,21 @@
-/** Résolution et cadence de la caméra, appliquées par la perception. */
+export type CameraSource = 'server' | 'browser';
+/** Images JPEG bornées ; une seule image en vol jusqu’à l’accusé de la perception. */
+export const BROWSER_CAMERA_MAX_BYTES = 250_000;
+export interface BrowserCameraConfig {
+  schemaVersion: 1;
+  type: 'camera_config';
+  source: CameraSource;
+  enabled: boolean;
+  mode: CameraMode;
+}
+
+/** Résolution, cadence et orientation de la caméra, appliquées par la perception. */
 export interface CameraMode {
   width: number;
   height: number;
   fps: number;
+  /** Caméra montée tête en bas : l’image est retournée avant la détection. Absent : à l’endroit. */
+  rotate180?: boolean;
 }
 
 export const CAMERA_RESOLUTIONS = [
@@ -35,7 +48,12 @@ export const CAMERA_FRAME_RATES = [
   },
 ] as const;
 
-export const DEFAULT_CAMERA_MODE: CameraMode = { width: 1280, height: 720, fps: 30 };
+export const DEFAULT_CAMERA_MODE: CameraMode = {
+  width: 1280,
+  height: 720,
+  fps: 30,
+  rotate180: false,
+};
 
 export function isCameraMode(value: unknown): value is CameraMode {
   if (!value || typeof value !== 'object') return false;
@@ -43,6 +61,27 @@ export function isCameraMode(value: unknown): value is CameraMode {
   return (
     CAMERA_RESOLUTIONS.some(
       (resolution) => resolution.width === mode.width && resolution.height === mode.height,
-    ) && CAMERA_FRAME_RATES.some((rate) => rate.fps === mode.fps)
+    ) &&
+    CAMERA_FRAME_RATES.some((rate) => rate.fps === mode.fps) &&
+    (mode.rotate180 === undefined || typeof mode.rotate180 === 'boolean')
   );
+}
+
+/** The worker reserves 1024 and 2562 byte packets for PCM audio. A JPEG comment
+ * avoids ambiguous lengths without changing pixels or the existing audio protocol. */
+export function encodeBrowserCameraFrame(
+  image: ArrayBuffer,
+  sequence: number,
+): Uint8Array<ArrayBuffer> {
+  const jpeg = new Uint8Array(image);
+  const padding = [1024, 2562].includes(jpeg.byteLength + 5) ? 4 : 0;
+  const frame = new Uint8Array(jpeg.byteLength + 5 + padding);
+  frame[0] = 0x43;
+  new DataView(frame.buffer).setUint32(1, sequence);
+  if (padding) {
+    frame.set(jpeg.subarray(0, 2), 5);
+    frame.set([255, 254, 0, 2], 7);
+    frame.set(jpeg.subarray(2), 11);
+  } else frame.set(jpeg, 5);
+  return frame;
 }

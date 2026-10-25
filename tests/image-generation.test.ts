@@ -233,6 +233,38 @@ test('une image gardée se réaffiche par position ou par sujet, sans franchir l
   );
 });
 
+test('pièce jointe d’un e-mail : l’image affichée d’abord, jamais celle d’un autre profil', async (t) => {
+  const f = fixture(t);
+  const none = f.generation.attachment(null, { shownId: null, position: null, search: null });
+  assert.match('summary' in none ? none.summary : '', /Aucune image récente à envoyer/u);
+  const phare = await f.create('Un phare dans la brume');
+  const chat = await f.create('Un chat roux sur un canapé', 'alice');
+  const bus = await f.create('Une illustration de bus', null, true);
+  const id = (result: typeof phare) => result.tool.snapshotId!;
+  const pick = (
+    profileId: string | null,
+    input: Partial<Parameters<typeof f.generation.attachment>[1]>,
+  ) => {
+    const found = f.generation.attachment(profileId, {
+      shownId: null,
+      position: null,
+      search: null,
+      ...input,
+    });
+    return 'image' in found ? found.image : null;
+  };
+  // L’illustration affichée se joint ; elle ne se retrouve pas par position.
+  assert.equal(pick(null, { shownId: id(bus) })?.prompt, 'Une illustration de bus');
+  assert.equal(pick('alice', {})?.prompt, 'Un chat roux sur un canapé');
+  assert.equal(pick('alice', { position: 2 })?.prompt, 'Un phare dans la brume');
+  assert.equal(pick('alice', { search: 'phare' })?.id, id(phare));
+  // L’image d’Alice affichée devant Bob : la plus récente visible pour Bob part à la place.
+  assert.equal(pick('bob', { shownId: id(chat) })?.id, id(phare));
+  assert.equal(pick('bob', { search: 'chat' }), null);
+  const path = pick(null, {})!.path;
+  assert.equal(path, f.generation.generatedFile(id(phare)));
+});
+
 test('le préchargement demande au worker de charger le modèle et persiste', async (t) => {
   const f = fixture(t);
   assert.deepEqual(f.worker.of('configure').at(-1), {

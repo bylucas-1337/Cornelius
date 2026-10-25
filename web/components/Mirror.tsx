@@ -3,8 +3,11 @@ import { TriangleAlert } from 'lucide-react';
 import { mirrorBlocker, type MirrorBlockerId } from '../../shared/readiness';
 import type { DisplayCard, SessionPhase, VoiceActivity } from '../../shared/types';
 import type { MirrorConnection } from '../useMirror';
+import { BrowserCamera } from '../camera/BrowserCamera';
 import { Orb } from './Orb';
 import { AmbientModules } from './AmbientModules';
+import { Screensaver, type ScreensaverScene } from './Screensaver';
+import { screensaverWoken } from './screensaver-wake';
 import { useVoice } from '../audio/useVoice';
 import {
   audioPreparation,
@@ -86,6 +89,72 @@ function useConnectionLost(fresh: boolean, interrupted: boolean) {
   return lost && !fresh && !interrupted;
 }
 
+/**
+ * Écran de veille : vrai après `delayMs` de conditions réunies sans interruption ; faux dès
+ * qu’elles cessent (une personne apparaît, une conversation s’ouvre).
+ */
+function useScreensaverActive(wanted: boolean, delayMs: number) {
+  const [active, setActive] = useState(false);
+  useEffect(() => {
+    if (!wanted) return void setActive(false);
+    const timer = setTimeout(() => setActive(true), delayMs);
+    return () => clearTimeout(timer);
+  }, [wanted, delayMs]);
+  return active && wanted;
+}
+
+/** Glissement qui retire la peinture : au moins 12 % du plus petit côté, en moins d’une seconde. */
+const SWIPE_RATIO = 0.12;
+const SWIPE_MS = 1_000;
+/** Temps sans geste avant que la peinture puisse revenir (s’ajoute au délai de retour). */
+const SWIPE_HOLD_MS = 60_000;
+
+/**
+ * Vrai pendant SWIPE_HOLD_MS après un glissement (souris pressée ou doigt) sur la peinture ;
+ * chaque nouveau geste prolonge l’attente. `listening` limite l’écoute aux moments où la
+ * peinture est à l’écran ou retenue.
+ */
+function useScreensaverSwipe(listening: boolean) {
+  const [dismissed, setDismissed] = useState(false);
+  const [lastGesture, setLastGesture] = useState(0);
+  useEffect(() => {
+    if (!listening && !dismissed) return;
+    let start: { id: number; x: number; y: number; time: number } | null = null;
+    const down = (event: PointerEvent) => {
+      start = { id: event.pointerId, x: event.clientX, y: event.clientY, time: event.timeStamp };
+      if (dismissed) setLastGesture(performance.now());
+    };
+    const move = (event: PointerEvent) => {
+      if (!start || start.id !== event.pointerId) return;
+      if (event.timeStamp - start.time > SWIPE_MS) return void (start = null);
+      const distance = Math.hypot(event.clientX - start.x, event.clientY - start.y);
+      if (distance < Math.min(innerWidth, innerHeight) * SWIPE_RATIO) return;
+      start = null;
+      setDismissed(true);
+      setLastGesture(performance.now());
+    };
+    const up = (event: PointerEvent) => {
+      if (start?.id === event.pointerId) start = null;
+    };
+    addEventListener('pointerdown', down);
+    addEventListener('pointermove', move);
+    addEventListener('pointerup', up);
+    addEventListener('pointercancel', up);
+    return () => {
+      removeEventListener('pointerdown', down);
+      removeEventListener('pointermove', move);
+      removeEventListener('pointerup', up);
+      removeEventListener('pointercancel', up);
+    };
+  }, [listening, dismissed]);
+  useEffect(() => {
+    if (!dismissed) return;
+    const timer = setTimeout(() => setDismissed(false), SWIPE_HOLD_MS);
+    return () => clearTimeout(timer);
+  }, [dismissed, lastGesture]);
+  return dismissed;
+}
+
 export function Mirror({ connection }: { connection: MirrorConnection }) {
   const { state, fresh, now, interrupted, reconnect } = connection;
   const preparation = useSyncExternalStore(subscribeAudioPreparation, audioPreparation);
@@ -162,6 +231,31 @@ export function Mirror({ connection }: { connection: MirrorConnection }) {
       .map((person) => person.trackId),
   );
   const activationShown = (!preparation.ready || audioLocked) && fresh && !state?.openaiBlocked;
+  // Peintures tant que l’orbe n’a pas à s’éveiller (voir screensaverWoken) et que rien n’attend
+  // un regard (carte, image en cours). Le bouton « Activer la voix » ne sert qu’à une personne
+  // présente : sa venue le fait revenir.
+  const screensaver = state?.screensaver;
+  const [screensaverScene, setScreensaverScene] = useState<ScreensaverScene>('off');
+  // Un glissement de souris ou de doigt sur la peinture la retire, le temps de s’en servir.
+  const screensaverSwiped = useScreensaverSwipe(
+    screensaverScene === 'on' || screensaverScene === 'entering',
+  );
+  const screensaverActive = useScreensaverActive(
+    !!screensaver?.enabled &&
+      !screensaverSwiped &&
+      screensaver.imageCount > 0 &&
+      // Un état brièvement ancien (resynchronisation) garde la peinture ; une coupure de plus
+      // de 5 s (connectionLost) la retire pour laisser voir la ligne d’état.
+      !!state &&
+      !screensaverWoken(state, phase) &&
+      !voiceOnlyActive &&
+      !satelliteName &&
+      !imageActivity &&
+      cards.length === 0 &&
+      !interrupted &&
+      !connectionLost,
+    screensaver?.returnDelayMs ?? 0,
+  );
   const mainCard = cards[0];
   const secondaryCards = cards.slice(1);
 
@@ -171,6 +265,7 @@ export function Mirror({ connection }: { connection: MirrorConnection }) {
       aria-label="Miroir Cornelius"
       // Taille de l’orbe choisie dans l’administration (100 % : taille d’origine).
       style={{ '--orb-user-scale': (state?.orbScale ?? 100) / 100 } as CSSProperties}
+      data-screensaver={screensaverScene}
     >
       <div className="mirror-top">
         <header className="mirror-header">
@@ -192,6 +287,18 @@ export function Mirror({ connection }: { connection: MirrorConnection }) {
         {fresh && state && <AmbientModules state={state} now={now} />}
       </div>
 
+      {/* Monté tant qu’il est activé ou encore visible : la sortie se joue jusqu’au bout. */}
+      {(screensaver?.enabled || screensaverScene !== 'off') && (
+        <Screensaver
+          active={screensaverActive}
+          revision={screensaver?.revision ?? ''}
+          intervalMs={screensaver?.intervalMs ?? 300_000}
+          transition={screensaver?.transition ?? 'vortex'}
+          durationMs={screensaver?.durationMs ?? 1_000}
+          fit={screensaver?.fit ?? 'canvas'}
+          onSceneChange={setScreensaverScene}
+        />
+      )}
       <div className="mirror-orb-anchor" data-testid="mirror-orb" />
       <Orb
         fullscreen
@@ -249,6 +356,7 @@ export function Mirror({ connection }: { connection: MirrorConnection }) {
           </section>
         )}
         <div className="mirror-footer">
+          <BrowserCamera config={connection.cameraConfig} active={fresh && !interrupted} />
           {interrupted && (
             // Le serveur a donné la main à un autre onglet : ne la reprendre qu’à la demande.
             <div className="mirror-hint">

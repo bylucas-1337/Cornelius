@@ -58,6 +58,7 @@ test('la clé OpenAI se saisit dans l’administration et compte sans redémarra
   const openaiBefore = before.find((secret: { env: string }) => secret.env === 'OPENAI_API_KEY');
   assert.equal(geminiBefore?.configured, false);
   assert.equal(openaiBefore?.configured, false);
+  assert.equal(openaiBefore?.group, 'providers');
   assert.equal(f.controller.snapshot().state.setup?.openaiKey, false);
 
   const saved = await f.app.inject({
@@ -166,6 +167,7 @@ test('la clé Tavily se configure dans l’administration sans divulguer sa vale
       configured: true,
       source: 'admin',
       hint: '6789',
+      group: 'providers',
       label: 'Clé Tavily pour la recherche web',
       usedBy: 'Recherche web avec Gemini si Tavily est activé',
       url: 'https://app.tavily.com/home',
@@ -205,6 +207,24 @@ test('jetons des modules : saisis dans l’administration, lus par le module', a
   });
   assert.equal(saved.statusCode, 200, saved.body);
   assert.equal(weatherSecret(await definitions())?.configured, true);
+});
+
+test('les groupes et icônes des jetons viennent des déclarations des modules', async (t) => {
+  const f = await fixture(t);
+  const { definitions } = (
+    await f.app.inject({ url: '/api/admin/addons', headers: f.headers })
+  ).json();
+  const { secrets } = (
+    await f.app.inject({ url: '/api/admin/secrets', headers: f.headers })
+  ).json();
+  for (const definition of definitions) {
+    for (const declared of definition.secrets ?? []) {
+      const secret = secrets.find((entry: { env: string }) => entry.env === declared.env);
+      assert.ok(secret, declared.env);
+      assert.equal(secret.group, 'modules');
+      assert.equal(secret.icon, definition.display?.icon);
+    }
+  }
 });
 
 test('clés : réservées à l’administration, noms inconnus et valeurs invalides refusés', async (t) => {

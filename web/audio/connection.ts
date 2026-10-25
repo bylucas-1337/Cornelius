@@ -1,4 +1,4 @@
-import { audioPreferences } from './preferences';
+import { captureKey } from './preferences';
 import {
   audioPreparation,
   microphoneConstraints,
@@ -16,7 +16,7 @@ export class LocalAudioConnection {
   // L’offre ne dépend pas du micro : sa piste rejoint l’émetteur dès qu’elle est prête.
   private readonly transceiver = this.peer.addTransceiver('audio', { direction: 'sendrecv' });
   readonly context = preparedAudioContext();
-  private readonly device = audioPreferences().microphone;
+  private readonly settings = captureKey();
   private readonly abort = new AbortController();
   private readonly pcmListeners = new Set<(pcm: ArrayBuffer) => void>();
   private overflowHandler: (() => void) | null = null;
@@ -36,7 +36,7 @@ export class LocalAudioConnection {
     return (
       this.buffered === buffered &&
       !this.abort.signal.aborted &&
-      this.device === audioPreferences().microphone &&
+      this.settings === captureKey() &&
       this.peer.connectionState !== 'closed' &&
       this.peer.connectionState !== 'failed' &&
       !this.stream?.getAudioTracks().some((track) => track.readyState === 'ended')

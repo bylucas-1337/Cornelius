@@ -35,8 +35,24 @@ import { agentsMigration } from './agents-store.js';
 import { addonRefsMigration } from './addons/migrations.js';
 import { adminPasswordMigration } from './admin-password.js';
 import { secretsMigration } from './secrets.js';
+import { mailMigration, mailRecipientsMigration } from './mail-store.js';
 import { trustedDevicesMigration } from './trusted-devices.js';
 import { satellitesMigration } from './satellites-store.js';
+import {
+  screensaverChoicesMigration,
+  screensaverDurationMigration,
+  screensaverLayoutMigration,
+  screensaverMigration,
+  screensaverSizesMigration,
+} from './screensaver.js';
+import {
+  DEFAULT_SCREENSAVER,
+  SCREENSAVER_FITS,
+  SCREENSAVER_TRANSITIONS,
+  SCREENSAVER_WAKES,
+  isScreensaverSettings,
+  type ScreensaverSettings,
+} from '../shared/screensaver.js';
 import { rotateMigrationBackups } from './backups.js';
 
 import type { Profile } from '../shared/types.js';
@@ -378,6 +394,26 @@ export const migrations: readonly string[] = [
   ALTER TABLE image_generation_provider_v2 RENAME TO image_generation_provider;`,
   `ALTER TABLE conversation_preferences ADD COLUMN gemini_tavily_enabled INTEGER NOT NULL DEFAULT 1
     CHECK (gemini_tavily_enabled IN (0, 1));`,
+  // Écran de veille : peintures et photos quand personne n’est devant le miroir.
+  screensaverMigration,
+  // Écran de veille : transition choisie et ce qui fait revenir l’orbe (validés par le code).
+  screensaverChoicesMigration,
+  // Écran de veille : durée de l’effet de transition.
+  screensaverDurationMigration,
+  // Écran de veille : image entière, posée comme une toile ou plein écran.
+  screensaverLayoutMigration,
+  // Écran de veille : dimensions des images, pour les trier par sens.
+  screensaverSizesMigration,
+  // Source indépendante du périphérique local : le retour au serveur retrouve son choix.
+  `CREATE TABLE IF NOT EXISTS camera_source (
+    id INTEGER PRIMARY KEY CHECK (id = 1),
+    source TEXT NOT NULL DEFAULT 'server' CHECK (source IN ('server', 'browser'))
+  ) STRICT;
+  INSERT OR IGNORE INTO camera_source (id) VALUES (1);`,
+  // Envoi par e-mail : serveur SMTP du foyer et destinataires, hors de la table des profils.
+  mailMigration,
+  // Envoi par e-mail : plusieurs adresses pour un même profil.
+  mailRecipientsMigration,
 ];
 
 function applyMigration(db: DatabaseSync, migration: string): void {
@@ -633,6 +669,42 @@ export class SessionPreferences {
   }
   setOrbScale(scale: number): void {
     this.db.prepare('UPDATE display_preferences SET orb_scale = ? WHERE id = 1').run(scale);
+  }
+  getScreensaver(): ScreensaverSettings {
+    const row = this.db
+      .prepare(
+        `SELECT enabled, interval_ms, return_delay_ms, transition, wake, duration_ms, fit
+         FROM screensaver_preferences JOIN screensaver_choices USING (id)
+           JOIN screensaver_duration USING (id) JOIN screensaver_layout USING (id) WHERE id = 1`,
+      )
+      .get();
+    // Une transition ou un réveil inconnu (retiré depuis) retombe sur la valeur par défaut seul.
+    const known = <T>(values: readonly T[], value: unknown, fallback: T): T =>
+      values.includes(value as T) ? (value as T) : fallback;
+    const settings = {
+      enabled: row?.enabled === 1,
+      intervalMs: Number(row?.interval_ms),
+      returnDelayMs: Number(row?.return_delay_ms),
+      transition: known(SCREENSAVER_TRANSITIONS, row?.transition, DEFAULT_SCREENSAVER.transition),
+      durationMs: Number(row?.duration_ms),
+      wake: known(SCREENSAVER_WAKES, row?.wake, DEFAULT_SCREENSAVER.wake),
+      fit: known(SCREENSAVER_FITS, row?.fit, DEFAULT_SCREENSAVER.fit),
+    };
+    return isScreensaverSettings(settings) ? settings : { ...DEFAULT_SCREENSAVER };
+  }
+  setScreensaver(settings: ScreensaverSettings): void {
+    this.db
+      .prepare(
+        'UPDATE screensaver_preferences SET enabled = ?, interval_ms = ?, return_delay_ms = ? WHERE id = 1',
+      )
+      .run(Number(settings.enabled), settings.intervalMs, settings.returnDelayMs);
+    this.db
+      .prepare('UPDATE screensaver_choices SET transition = ?, wake = ? WHERE id = 1')
+      .run(settings.transition, settings.wake);
+    this.db
+      .prepare('UPDATE screensaver_duration SET duration_ms = ? WHERE id = 1')
+      .run(settings.durationMs);
+    this.db.prepare('UPDATE screensaver_layout SET fit = ? WHERE id = 1').run(settings.fit);
   }
   getAdvancedAudioBuffer(): boolean {
     return (

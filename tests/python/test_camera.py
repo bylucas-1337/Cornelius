@@ -62,7 +62,7 @@ class CameraTests(unittest.TestCase):
             self.assertEqual(first[cv2.CAP_PROP_FRAME_WIDTH], DEFAULT_MODE["width"])
             self.assertEqual(first[cv2.CAP_PROP_FPS], DEFAULT_MODE["fps"])
             status = camera.set_mode({"width": 640, "height": 480, "fps": 15})
-            self.assertEqual(status["mode"], {"width": 640, "height": 480, "fps": 15})
+            self.assertEqual(status["mode"], {"width": 640, "height": 480, "fps": 15, "rotate180": False})
             self.assertEqual(status["selectedId"], camera.selected_id)
             reopened = Capture.opened[-1].settings
             self.assertEqual(reopened[cv2.CAP_PROP_FRAME_WIDTH], 640)
@@ -85,8 +85,37 @@ class CameraTests(unittest.TestCase):
             self.assertEqual(status["selectedId"], saved)
             # Une seule ouverture, sur la bonne entrée : jamais l’entrée par défaut d’abord.
             self.assertEqual([capture.index for capture in Capture.opened], [2])
-            self.assertEqual(status["mode"], {"width": 640, "height": 480, "fps": 15})
+            self.assertEqual(status["mode"], {"width": 640, "height": 480, "fps": 15, "rotate180": False})
             camera.disable()
+
+    def test_upside_down_camera_is_rotated_without_reopening(self):
+        devices = [SimpleNamespace(index=0, backend=700, name="Camera 0", path="device-0")]
+        with patch("camera.enumerate_cameras", return_value=devices), patch("camera.cv2.VideoCapture", Capture):
+            Capture.opened.clear()
+            camera = Camera()
+            status = camera.set_mode({**DEFAULT_MODE, "rotate180": True})
+            self.assertTrue(status["mode"]["rotate180"])
+            self.assertEqual(len(Capture.opened), 1)
+            marked = np.zeros((48, 64, 3), dtype=np.uint8)
+            marked[0, 0] = 255
+            with patch.object(Capture, "read", lambda self: (True, marked.copy())):
+                _, frame, _, _ = camera.read()
+            self.assertEqual(frame[47, 63].tolist(), [255, 255, 255])
+            self.assertEqual(frame[0, 0].tolist(), [0, 0, 0])
+            camera.disable()
+
+    def test_browser_frames_are_rotated_too(self):
+        import cv2
+        from browser_camera import BrowserCamera
+        camera = BrowserCamera()
+        camera.enable(mode={**DEFAULT_MODE, "rotate180": True})
+        image = np.zeros((48, 64, 3), dtype=np.uint8)
+        image[:8, :8] = 255
+        ok, jpeg = cv2.imencode(".jpg", image)
+        self.assertTrue(ok and camera.receive(jpeg.tobytes()))
+        frame = camera.read()[1]
+        self.assertGreater(frame[44, 60].mean(), 200)
+        self.assertLess(frame[4, 4].mean(), 50)
 
 
 if __name__ == "__main__":

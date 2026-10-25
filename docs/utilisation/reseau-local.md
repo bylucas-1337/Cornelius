@@ -11,6 +11,8 @@ L’ordinateur de Cornelius garde son adresse habituelle, `http://127.0.0.1:3000
 
 L’adresse exacte s’affiche dans l’administration, rubrique **Mise en route**, carte **Accès depuis le réseau local**, et au démarrage du serveur (ligne « Réseau local · https://192.168.1.20:3443 »). Le nom de l’ordinateur suivi de `.local` fonctionne aussi sur la plupart des réseaux (par exemple `https://miroir.local:3443/`).
 
+Une adresse tapée sans le « s » (`http://192.168.1.20:3443/`) renvoie d’elle-même vers l’adresse chiffrée. Le port `3000`, lui, ne répond qu’à l’ordinateur de Cornelius.
+
 Le chiffrement est indispensable : sans lui, les navigateurs refusent le micro, et le mot de passe de l’administration passerait en clair sur le Wi‑Fi.
 
 ## Le certificat
@@ -34,7 +36,7 @@ Tant que le mot de passe vaut `cornelius` (la valeur de départ), aucune connexi
 
 ## Un seul miroir à la fois
 
-Un seul miroir est actif : en ouvrir un sur la tablette ferme celui de l’écran, avec le message « Miroir ouvert dans un autre onglet ». La caméra, le mot d’appel et la vision restent ceux de l’ordinateur de Cornelius ; seuls le micro et le haut-parleur sont ceux de l’appareil qui affiche le miroir.
+Un seul miroir est actif : en ouvrir un sur la tablette ferme celui de l’écran, avec le message « Miroir ouvert dans un autre onglet ». Par défaut, la caméra reste celle du serveur Cornelius. Vous pouvez choisir [la caméra du navigateur](../fonctionnalites/camera-navigateur.md) : ses images sont alors envoyées au serveur par le réseau local chiffré. Le mot d’appel et la vision restent analysés sur le serveur ; le micro et le haut-parleur sont ceux de l’appareil qui affiche le miroir.
 
 ## Ce qui reste réservé à l’ordinateur
 

@@ -46,7 +46,7 @@ Une même règle vaut dans toutes les rubriques :
 
 Si vous quittez une rubrique avec des modifications non enregistrées, l’administration demande : « Des modifications ne sont pas enregistrées. Quitter cette rubrique sans les enregistrer ? ».
 
-Les réglages sont gardés sur le serveur et conservés après un redémarrage. Seul le choix du micro et des haut-parleurs est propre au navigateur.
+Les réglages sont gardés sur le serveur et conservés après un redémarrage. Seuls le choix du micro et des haut-parleurs, la réduction du bruit et le gain automatique sont propres au navigateur.
 
 ## Mise en route
 
@@ -64,7 +64,7 @@ La carte « Avant la première conversation » (« Tout est prêt » une fois fi
 8. **Mot de passe administrateur** : à changer dans la carte du même nom, plus bas, s’il vaut encore celui de départ.
 9. **Accès à l’IA** : bouton « Autoriser l’IA » si l’accès a été bloqué.
 
-La liste se met à jour d’elle-même. Sous elle : la carte **Clés et jetons** (clé OpenAI et jetons des modules, pris en compte sans redémarrage), la carte **Mot de passe administrateur** et la carte **Accès depuis le réseau local**. Le parcours complet est décrit dans [Premier démarrage](../installation/premier-demarrage.md).
+La liste se met à jour d’elle-même. Sous elle : la carte **Clés et jetons** (clé OpenAI, mot de passe SMTP et jetons des modules, pris en compte sans redémarrage), la carte **Mot de passe administrateur** et la carte **Accès depuis le réseau local**. Le parcours complet est décrit dans [Premier démarrage](../installation/premier-demarrage.md).
 
 ## Micro et haut-parleurs
 
@@ -74,7 +74,12 @@ Carte « Audio de ce navigateur » :
 
 - **Autoriser et vérifier le microphone** : demande l’autorisation au navigateur, puis affiche « Micro autorisé ». Le micro n’est allumé que le temps de la vérification, qui attend la fin d’une conversation en cours.
 - **Microphone** et **Haut-parleurs** : « Périphérique par défaut » au départ. Un appareil débranché reste proposé comme « Périphérique enregistré (à reconnecter) ».
+- **Réduction du bruit du navigateur** (activée par défaut) : GPT-Live ignore déjà le bruit ambiant. Si Cornelius vous comprend mal, essayez sans : ce filtre peut abîmer la voix.
+- **Gain automatique du micro** (activé par défaut) : relève le micro dans les silences, et avec lui la voix de Cornelius qui revient par le haut-parleur. S’il s’entend lui-même ou se laisse mal couper, essayez sans, et réglez le volume du micro dans le système.
 - **Tester le haut-parleur** : joue le son « Carillon ».
+- **Tester le micro** : ouvre le micro dix secondes avec ces réglages et montre son niveau. La barre doit bien bouger quand vous parlez à votre distance habituelle, sans rester collée au bout. Dessous, « Appliqué par le navigateur » dit si l’annulation d’écho, la réduction du bruit et le gain automatique sont vraiment actifs.
+
+L’annulation d’écho reste toujours active : Cornelius écoute pendant qu’il parle, et c’est elle qui retire sa propre voix du micro. Elle retire seulement le son joué par ce navigateur, et le retire mieux quand les haut-parleurs sont la sortie par défaut du système, à distance du micro et pas tournés vers lui. GPT-Live n’a, de son côté, aucun réglage d’écoute : il décide seul quand la personne parle, a fini ou le coupe.
 
 Ce choix appartient au navigateur où il est fait, et à l’adresse utilisée. Faites-le dans le navigateur qui affiche le miroir.
 
@@ -82,7 +87,7 @@ Ce choix appartient au navigateur où il est fait, et à l’adresse utilisée. 
 
 *Premiers réglages.* La caméra du miroir, la reconnaissance des visages et le regard.
 
-- **Caméra du miroir** : choisissez la « Caméra », puis « Utiliser cette caméra ». « Actualiser la liste » cherche une caméra qui vient d’être branchée, « Afficher l’aperçu » montre l’image en direct (rien n’est enregistré). « Résolution » (640 x 480, 1280 x 720 recommandée, 1920 x 1080) et « Images par seconde » (15, ou 30 recommandée) règlent l’image de la caméra ; un conseil s’affiche sous chaque liste, et « Image reçue » dit ce que la caméra a réellement accepté. Tant que cette page (ou « Reconnaissance des visages ») est ouverte, la caméra reste allumée pour le réglage, même si le mode d’ouverture l’éteint en veille ; elle reprend son fonctionnement habituel moins d’une minute après. Le choix n’est impossible que si le service caméra est arrêté ou pendant un enregistrement de visage. Pendant une conversation, il reste possible : la conversation peut seulement perdre la présence un instant. La raison ou la remarque est écrite sous la liste.
+- **Caméra du miroir** : choisissez la « Caméra », puis « Utiliser cette caméra ». « Actualiser la liste » cherche une caméra qui vient d’être branchée, « Afficher l’aperçu » montre l’image en direct (rien n’est enregistré). « Résolution » (640 x 480, 1280 x 720 recommandée, 1920 x 1080) et « Images par seconde » (15, ou 30 recommandée) règlent l’image de la caméra ; un conseil s’affiche sous chaque liste, et « Image reçue » dit ce que la caméra a réellement accepté. « Caméra montée à l’envers » retourne l’image de 180° avant la détection des visages et l’aperçu, pour une caméra fixée tête en bas ; la caméra n’est pas rouverte. Tant que cette page (ou « Reconnaissance des visages ») est ouverte, la caméra reste allumée pour le réglage, même si le mode d’ouverture l’éteint en veille ; elle reprend son fonctionnement habituel moins d’une minute après. Le choix n’est impossible que si le service caméra est arrêté ou pendant un enregistrement de visage. Pendant une conversation, il reste possible : la conversation peut seulement perdre la présence un instant. La raison ou la remarque est écrite sous la liste.
 - **Reconnaissance des personnes** : « Reconnaissance faciale » charge les préférences et les modules associés au profil identifié. « Sans reconnaissance faciale » conserve la détection de présence et du regard, sans attribuer d’identité ; le contexte conversationnel est celui du foyer. Les affichages permanents activés pour les sources du foyer et des profils restent visibles. Les réglages et visages mémorisés sont conservés pour une réactivation ultérieure.
 - **Exigence de la reconnaissance** : la ressemblance demandée avant de reconnaître une personne. « Très souple », « Souple », « Équilibrée » (par défaut) ou « Stricte ». Le chiffre exact se règle dans « Réglage fin », de 0,20 (souple) à 0,65 (stricte), 0,42 par défaut. « Tester en direct » montre le score de chaque personne face à l’exigence.
 - **Détection du regard** : quand Cornelius estime que vous le regardez, d’après l’orientation et la taille du visage, sans suivre les yeux. « Souple », « Équilibrée » (par défaut, le réglage conseillé) ou « Stricte ». Dans « Réglage fin » : « Orientation de la tête acceptée », de 10 à 50 (30 par défaut), et « Taille minimale du visage (%) », de 5 à 30 (14 par défaut).
@@ -140,6 +145,19 @@ Chaque texte compte 4 000 caractères au plus. Enregistrer s’applique aussitô
 - **Voix de Cornelius** : l’une des 22 voix de GPT-Live. Cedar (par défaut) et Marin sont conseillées pour le français ; les autres peuvent garder un léger accent anglais. La nouvelle voix s’entend à la conversation suivante.
 - **Taille de l’orbe** : de 50 à 150 % de sa taille d’origine, appliquée en direct sur le miroir ; « Revenir à 100 % » la remet à l’origine.
 
+## Écran de veille
+
+*Au quotidien.* Les peintures et les photos affichées quand personne n’est devant le miroir. Voir [L’écran de veille](miroir.md#lécran-de-veille).
+
+- **Afficher des images au repos** : désactivé par défaut. Sans image, l’écran reste noir.
+- **L’orbe revient** : « Au moindre mouvement » (par défaut) ou « Selon le réveil de Cornelius », qui suit ce qui ouvre la conversation (présence, regard ou mot « Cornelius », réglés dans « Quand il écoute »). La carte dit ce que cela donne avec vos réglages.
+- **Transition** : « Aspiration » (par défaut), « Cendres », « Onde », « Mosaïque », « Rideau », « Fondu », « Au hasard » ou « Sans transition ».
+- **Affichage des images** : « Entière, de bord à bord » (l’image entière, des bandes noires complètent), « Comme une toile » (par défaut : posée sur son propre flou, ou plein écran si ses proportions sont proches de celles de l’écran) ou « Plein écran » (bords coupés). Une image n’est jamais étirée.
+- **Durée de l’effet** : 0,5, 1 (par défaut), 1,5, 2 ou 3 secondes pour la disparition de l’image ; son retour prend 1,6 fois plus longtemps.
+- **Changer d’image toutes les** : 30 s, 1, 5 (par défaut) ou 15 minutes, ou 1 heure.
+- **Revenir aux images après** : 5 s, 30 s (par défaut), 1 ou 5 minutes sans personne devant le miroir.
+- **Images** : « Ajouter des photos » (JPEG, PNG ou WebP, 25 Mo au plus chacune, plusieurs à la fois) et « Télécharger 32 peintures » : une sélection de peintures célèbres du domaine public (Van Gogh, Monet, Hokusai, Vermeer, Léonard de Vinci…), dont 16 verticales pour un miroir en portrait, prises sur Wikimedia Commons. Pour en retirer, cochez les images (un clic sur la vignette), puis « Retirer (n) » et confirmez. Les filtres « Peintures », « Vos photos », « Verticales » et « Horizontales » limitent la grille, et « Tout sélectionner » coche ce qu’elle montre : retirer toutes les horizontales d’un miroir en portrait se fait en trois clics. Une peinture retirée revient avec « Compléter les peintures ».
+
 ## Modules
 
 *Au quotidien.* Les sources de ses réponses et les commandes qu’il peut lancer.
@@ -154,7 +172,8 @@ Une seule liste, en trois groupes : un module peut aussi bien donner des informa
   - « Cartes » : « Cartes à l’écran » (1 à 4, 3 par défaut), « Disparition après » (30 s, 1 minute par défaut, 2 ou 5 minutes) et « Raccourcir les cartes au second plan » (activé par défaut : une carte passée sur le côté garde son titre, sa valeur et deux lignes) ;
   - « Web » : « Autoriser la recherche web » (activé par défaut). Les sources s’affichent sur la carte. « Utiliser Tavily avec Gemini » (activé par défaut) choisit Tavily ; désactivé, Gemini utilise la recherche Google native, selon les accès et quotas du compte. Ce choix ne change pas la recherche native d’OpenAI. La clé Tavily n’est nécessaire que lorsque cette option est activée et que Gemini est utilisé ;
   - « Vision » : la description de ce que voit la caméra, calculée sur cet ordinateur, en trois étapes (« Choisir le modèle », « Installer », « Activer »). « Quand regarder » : « Jamais », « Au début de la conversation, puis sur demande » (par défaut) ou « Uniquement sur demande ». « Calcul » : automatique, carte graphique ou processeur. Voir [La vision locale](../fonctionnalites/vision-locale.md) ;
-  - « Génération d’image » : « Où créer les images », sur ce PC (quatre modèles, de « Léger » à « Très précis », installés sur cet ordinateur en trois étapes) ou avec OpenAI (la même clé que la conversation, un modèle GPT Image et une qualité au choix, rien à installer). « Autoriser la création d’images », « Charger le modèle dès le démarrage » et « Illustrer automatiquement les cartes », tous trois désactivés par défaut. Voir [La génération d’images](../fonctionnalites/generation-d-images.md).
+  - « Génération d’image » : « Où créer les images », sur ce PC (quatre modèles, de « Léger » à « Très précis », installés sur cet ordinateur en trois étapes) ou avec OpenAI (la même clé que la conversation, un modèle GPT Image et une qualité au choix, rien à installer). « Autoriser la création d’images », « Charger le modèle dès le démarrage » et « Illustrer automatiquement les cartes », tous trois désactivés par défaut. Voir [La génération d’images](../fonctionnalites/generation-d-images.md) ;
+  - « E-mail » : le compte d’envoi (boutons Gmail, iCloud, Orange, Free, SFR, OVH, puis « Serveur SMTP », « Port », « Chiffrement », « Adresse d’envoi », « Mot de passe »), « Tester la connexion », les « Destinataires » (nom à dire, adresse, profil relié, plusieurs adresses par profil possibles, « Envoyer un essai ») et « Autoriser l’envoi par e-mail » (désactivé par défaut). Voir [L’envoi par e-mail](../fonctionnalites/envoi-par-e-mail.md).
 
 Voir [Les modules](../modules/README.md).
 

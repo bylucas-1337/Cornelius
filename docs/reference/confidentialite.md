@@ -4,14 +4,14 @@ Cette page dit ce qui reste sur l’ordinateur du miroir, ce qui part chez OpenA
 
 ## En bref
 
-- La caméra, les visages et la vision restent sur l’ordinateur. Aucune image ne quitte la machine.
+- Par défaut, la caméra est branchée au serveur Cornelius. Avec la caméra du navigateur, les images rejoignent ce serveur par le réseau local chiffré. Les visages et la vision y sont analysés ; aucune image n’est envoyée à OpenAI.
 - En veille, le son du micro reste sur l’ordinateur. Celui d’un satellite audio va à l’ordinateur par le réseau local, chiffré, et n’en sort pas.
 - Pendant une conversation, la voix et le texte de l’échange partent chez OpenAI. Après la conversation, le texte dit par une personne reconnue peut repartir chez OpenAI pour choisir les souvenirs à garder.
 - Cornelius n’enregistre ni image, ni son, ni transcription de conversation sur le disque.
 
 ## Ce qui reste sur l’ordinateur
 
-- **Les images de la caméra.** La caméra est lue par le service caméra (la perception), sur l’ordinateur. Les images restent en mémoire vive et ne sont jamais écrites sur le disque.
+- **Les images de la caméra.** La perception analyse la caméra du serveur, ou les images reçues du navigateur quand cette option est choisie. Les images restent en mémoire vive sur le serveur et ne sont jamais écrites sur le disque.
 - **Les visages.** L’enregistrement d’un visage garde des signatures numériques, calculées à partir des images : ce sont des nombres, pas des photos. Elles sont rangées dans la base. La reconnaissance se fait sur l’ordinateur.
 - **La vision locale.** La description d’une image est calculée sur l’ordinateur par le modèle LFM2.5-VL. Seul le texte de cette description rejoint la conversation, donc OpenAI. Elle n’est jamais écrite dans la mémoire. Voir [La vision locale](../fonctionnalites/vision-locale.md).
 - **Le mot d’appel.** « Cornelius » est reconnu sur l’ordinateur, avec openWakeWord. Aucun service en ligne n’est appelé pour cela.
@@ -38,6 +38,7 @@ Pour couper tout envoi vers le fournisseur d’IA, utilisez **Bloquer l’IA** (
 - les consignes de Cornelius, le style du foyer et, si la personne est reconnue, son prénom, son style et ses repères (**Personnaliser Cornelius → Ce que Cornelius reçoit** montre ce texte) ;
 - les descriptions de la caméra, si la vision est active ;
 - les résultats des modules, des commandes, de Home Assistant et des agents, et les souvenirs consultés quand une question porte sur eux ;
+- les noms des destinataires d’e-mail et le résultat d’un envoi, jamais leurs adresses ;
 - les recherches sur le web, si **Modules → Web → Autoriser la recherche web** est activé. Avec Gemini, le choix **Utiliser Tavily avec Gemini** envoie la requête à Tavily ; sinon, Gemini utilise Google Search natif. Avec OpenAI, OpenAI conserve sa recherche native. Ne demandez pas de rechercher des informations personnelles ou secrètes.
 
 Les conversations Gemini Live sont transmises par WebSocket au service Gemini. Avec le niveau gratuit de Gemini, Google indique que le contenu peut être utilisé pour améliorer ses produits : vérifiez les [conditions de Gemini API](https://ai.google.dev/gemini-api/terms) et les quotas applicables à votre compte. Avec OpenAI, les sessions sont ouvertes avec `store: false`, qui demande de ne pas conserver la réponse pour la consulter ensuite ; cette option ne dit rien des autres règles de conservation d’OpenAI.
@@ -52,7 +53,9 @@ Les conversations Gemini Live sont transmises par WebSocket au service Gemini. A
 - **Les commandes** (**Modules → Commandes HTTP**) envoient leur requête à l’adresse que vous avez saisie.
 - **Home Assistant** reçoit les commandes des appareils autorisés, à l’adresse de votre installation.
 - **Les agents** (Hermes) reçoivent la demande confiée par la personne reconnue, à l’adresse de votre agent.
+- **Les e-mails** (**Modules → E-mail**) partent par le serveur de messagerie réglé (Gmail, iCloud, votre fournisseur…), vers les seuls destinataires de la liste, avec l’image demandée en pièce jointe ou le court message dicté. Une photo de la caméra n’est jamais envoyée. Voir [L’envoi par e-mail](../fonctionnalites/envoi-par-e-mail.md).
 - **Les modèles** sont téléchargés depuis leurs sites (GitHub, Hugging Face) lors de leur installation.
+- **Les peintures de l’écran de veille** sont téléchargées depuis Wikimedia Commons, seulement quand vous cliquez sur « Télécharger les peintures ». Vos photos ne quittent jamais l’ordinateur.
 
 ## Les données enregistrées
 
@@ -62,12 +65,14 @@ Tout est sur l’ordinateur du miroir, dans le dossier `data/` (voir [Configurat
 |---|---|
 | Profils, signatures des visages, souvenirs, style et repères, sources et commandes, réglages | la base `data/cornelius.sqlite` |
 | Jeton Home Assistant et jeton de connexion de chaque agent | la base, **sans chiffrement** |
+| Réglages d’envoi d’e-mail et adresses des destinataires | la base ; jamais diffusées au miroir ni données à la conversation. Supprimer un profil supprime son adresse. |
 | Copies de sécurité de la base | à côté de la base, `cornelius.sqlite.backup-v…sqlite` |
 | Journal technique | `data/logs/cornelius.log` |
 | Trois dernières images créées | `data/generated-images/`, vidé à chaque démarrage |
+| Images de l’écran de veille (vos photos et les peintures) | `data/screensaver/` ; leur titre dans la base |
 | Mot de passe de l’administration | le fichier `.env` au départ ; s’il est changé dans **Mise en route**, une empreinte (scrypt) dans la base, jamais le mot de passe lui-même |
 | Secrets des commandes (`CORNELIUS_SECRET_*`) | le fichier `.env`, jamais dans la base |
-| Clés Gemini/OpenAI, jetons Météo et Transports | la base locale s’ils sont saisis dans l’administration (ils y passent avant ceux de `.env`), sinon le fichier `.env`. L’administration n’en montre que les quatre derniers caractères, et le journal les masque. |
+| Clés Gemini/OpenAI, jetons Météo et Transports, mot de passe SMTP | la base locale s’ils sont saisis dans l’administration (ils y passent avant ceux de `.env`), sinon le fichier `.env`. L’administration n’en montre que les quatre derniers caractères, et le journal les masque. |
 
 Sous Linux, la base, ses copies, `.env` et le journal ne sont lisibles que par leur propriétaire.
 
@@ -132,3 +137,7 @@ Le bouton **Bloquer l’IA**, dans le panneau **Conversation** de la rubrique **
 - [Les agents Hermes](../fonctionnalites/agents-hermes.md)
 - [Configuration](configuration.md)
 - [Licences](licences.md)
+
+## Caméra du navigateur (option)
+
+Si vous choisissez [la caméra du navigateur](../fonctionnalites/camera-navigateur.md), ses images quittent cet appareil pour rejoindre le serveur Cornelius par le réseau local chiffré. Elles sont analysées en mémoire, sans enregistrement ni envoi à OpenAI. La caméra du serveur reste le choix par défaut.

@@ -1593,3 +1593,85 @@ test('mode voix : caméra éteinte sans reconnaissance, allumée en permanence a
   await setImmediate();
   assert.equal(toggles.at(-1), false, 'sans reconnaissance, caméra éteinte en veille');
 });
+
+test('browser camera is opt-in, admin configured, same-origin and reserved to the active mirror', async (t) => {
+  const f = await fixture(t);
+  const admin = await f.login();
+  const cookie = await f.kiosk();
+  const headers = { origin, cookie: admin };
+  const url = '/api/admin/camera/source';
+  assert.equal(
+    (
+      await f.app.inject({
+        method: 'PUT',
+        url,
+        headers: { host: 'localhost', origin, cookie },
+        payload: { source: 'browser' },
+      })
+    ).statusCode,
+    401,
+  );
+  assert.equal(
+    (await f.app.inject({ method: 'PUT', url, headers, payload: { source: 'other' } })).statusCode,
+    400,
+  );
+  await assert.rejects(
+    f.app.injectWS('/camera-stream', { headers: { host: 'localhost', origin, cookie } }),
+    /403/,
+  );
+  const kiosk = await f.connect('kiosk', cookie);
+  const worker = await f.app.injectWS('/perception', {
+    headers: { host: 'localhost', origin, authorization: 'Bearer ' + 'p'.repeat(40) },
+  });
+  f.sockets.push(worker);
+  const messages: { type: string; source?: string }[] = [];
+  worker.on('message', (data, binary) => {
+    if (!binary) messages.push(JSON.parse(String(data)));
+  });
+  assert.equal(
+    (await f.app.inject({ method: 'PUT', url, headers, payload: { source: 'browser' } }))
+      .statusCode,
+    200,
+  );
+  await setImmediate();
+  assert.ok(messages.some((event) => event.type === 'camera_source' && event.source === 'browser'));
+  assert.equal(
+    (await f.app.inject({ url: '/api/admin/devices', headers })).json().perception.camera.source,
+    'browser',
+  );
+  await assert.rejects(f.app.injectWS('/camera-stream', { headers: { cookie } }), /403/);
+  await assert.rejects(
+    f.app.injectWS('/camera-stream', { headers: { origin: 'http://evil.invalid', cookie } }),
+    /403/,
+  );
+  // An older worker must not silently fall back to a server camera.
+  await assert.rejects(
+    f.app.injectWS('/camera-stream', { headers: { host: 'localhost', origin, cookie } }),
+    /403/,
+  );
+  worker.send(JSON.stringify({ type: 'camera_source_status', source: 'browser' }));
+  await setImmediate();
+  await f.app.inject({ method: 'POST', url: '/api/admin/camera/hold', headers });
+  const stream = await f.app.injectWS('/camera-stream', {
+    headers: { host: 'localhost', origin, cookie },
+  });
+  f.sockets.push(stream);
+  const frame = Buffer.from([0x43, 0, 0, 0, 7, 255, 216, 1, 2, 255, 217]);
+  const received = once(worker, 'message', { signal: AbortSignal.timeout(2000) });
+  stream.send(frame);
+  const [data, binary] = await received;
+  assert.equal(binary, true);
+  assert.deepEqual(data, frame);
+  const ack = once(stream, 'message', { signal: AbortSignal.timeout(2000) });
+  worker.send(JSON.stringify({ type: 'camera_frame_ack', sequence: 7, accepted: true }));
+  const [ackData] = await ack;
+  assert.deepEqual(JSON.parse(String(ackData)), { type: 'camera_ack', sequence: 7 });
+  const closed = once(stream, 'close', { signal: AbortSignal.timeout(2000) });
+  await f.connect('kiosk', cookie);
+  await closed;
+  assert.equal(kiosk.socket.readyState >= 2, true);
+  assert.equal(
+    (await f.app.inject({ method: 'PUT', url, headers, payload: { source: 'server' } })).statusCode,
+    200,
+  );
+});

@@ -164,6 +164,21 @@ export function registerHardware(
     required: ['id'],
     properties: { id: { type: 'string', minLength: 1, maxLength: 1024 } },
   });
+  const cameraSource = compile<{ source: 'server' | 'browser' }>({
+    type: 'object',
+    additionalProperties: false,
+    required: ['source'],
+    properties: { source: { enum: ['server', 'browser'] } },
+  });
+  app.put('/api/admin/camera/source', { preHandler: authorize('admin') }, async (req, reply) => {
+    if (!cameraSource(req.body)) return reply.code(400).send({ error: 'Source caméra invalide.' });
+    try {
+      perception.setCameraSource(req.body.source);
+      return { ok: true };
+    } catch (error) {
+      return reply.code(409).send({ error: (error as Error).message });
+    }
+  });
   app.post('/api/admin/camera/refresh', { preHandler: authorize('admin') }, async (_req, reply) => {
     try {
       perception.camera.refresh();
@@ -186,6 +201,7 @@ export function registerHardware(
         width: req.body.width,
         height: req.body.height,
         fps: req.body.fps,
+        rotate180: req.body.rotate180 === true,
       });
       return { ok: true };
     } catch (error) {

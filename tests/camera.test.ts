@@ -123,3 +123,37 @@ test('résolution et cadence : enregistrées, envoyées à la perception et rest
   assert.deepEqual(again.find((event) => event.type === 'camera_mode')?.mode, mode);
   restored.disconnect();
 });
+
+test('caméra à l’envers : réglage enregistré et rendu à une perception qui redémarre', (t) => {
+  const { camera, db } = fixture(t);
+  const mode = { width: 1280, height: 720, fps: 30, rotate180: true };
+  camera.setMode(mode);
+  assert.deepEqual(camera.savedMode(), mode);
+  const restored = new CameraBridge(db, () => {});
+  const again: { type: string; mode?: unknown }[] = [];
+  restored.connect((event) => again.push(event as (typeof again)[number]));
+  restored.receive({ ...status, mode: { ...mode, rotate180: false }, actual: null });
+  assert.deepEqual(again.find((event) => event.type === 'camera_mode')?.mode, mode);
+  restored.disconnect();
+});
+
+test('browser resolution acknowledgements preserve the previously selected server camera', (t) => {
+  const f = fixture(t);
+  f.camera.select('two');
+  f.camera.receive({ ...status, selectedId: 'two', requestId: f.sent.at(-1)!.requestId });
+  f.camera.receive({
+    type: 'camera_status',
+    selectedId: 'browser',
+    devices: [{ id: 'browser', label: 'Browser' }],
+    error: null,
+  });
+  f.camera.setMode({ width: 640, height: 480, fps: 15 });
+  f.camera.receive({
+    type: 'camera_status',
+    selectedId: 'browser',
+    devices: [{ id: 'browser', label: 'Browser' }],
+    error: null,
+    requestId: f.sent.at(-1)!.requestId,
+  });
+  assert.equal(f.camera.savedDevice(), 'two');
+});

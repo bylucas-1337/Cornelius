@@ -72,6 +72,8 @@ class CommandTest(unittest.TestCase):
             ],
         )
         self.assertNotIn("--force-reinstall", sdk)
+        self.assertIn("--no-cache-dir", sdk)
+        self.assertIn("--no-cache-dir", torch)
         self.assertEqual(torch, install.torch_install_command("py", "rocm", windows=True))
         # Linux, CUDA, CPU et dépôt imposé : PyTorch seul.
         self.assertEqual(len(install.torch_install_commands("py", "rocm", windows=False)), 1)

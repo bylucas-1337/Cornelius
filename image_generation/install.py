@@ -129,7 +129,9 @@ def torch_install_command(python, backend, windows=None, version=None, index=Non
     windows = os.name == "nt" if windows is None else windows
     version = version or os.getenv("CORNELIUS_TORCH_VERSION") or TORCH_VERSION
     index = index or os.getenv("CORNELIUS_TORCH_INDEX_URL")
-    base = [str(python), "-m", "pip", "install", "--disable-pip-version-check", "--force-reinstall"]
+    # Sans cache : ces roues font plusieurs Go, et un cache pip inaccessible en écriture
+    # (créé par un autre compte, verrouillé par l’antivirus) fait échouer l’installation.
+    base = [str(python), "-m", "pip", "install", "--disable-pip-version-check", "--no-cache-dir", "--force-reinstall"]
     if backend == "rocm":
         if index:
             return base + ["torch==" + version, "--find-links", index]
@@ -157,7 +159,7 @@ def torch_install_commands(python, backend, windows=None, version=None, index=No
     if backend != "rocm" or not windows or index:
         return [torch]
     # Sans --force-reinstall : des composants déjà présents dans la bonne version sont gardés.
-    sdk = [str(python), "-m", "pip", "install", "--disable-pip-version-check"]
+    sdk = [str(python), "-m", "pip", "install", "--disable-pip-version-check", "--no-cache-dir"]
     return [sdk + [WINDOWS_ROCM_FOLDER + name for name in WINDOWS_ROCM_SDK], torch]
 
 

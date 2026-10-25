@@ -22,7 +22,8 @@ import departuresFixture from '../addons/transit/fixtures/departures.json' with 
 const transitBody = JSON.stringify(departuresFixture);
 
 /** Les modules sont découverts comme en production : aucun registre écrit à la main. */
-const addonRegistry = (await loadAddons()).addons;
+// Modules livrés seulement : un dépôt cornelius-modules cloné à côté ne change pas ces tests.
+const addonRegistry = (await loadAddons({ externalRoot: null })).addons;
 
 function stubHttp() {
   let handler: () => Promise<{ status: number; body: string }> = async () => ({

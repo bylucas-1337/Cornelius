@@ -14,7 +14,8 @@ import {
 } from '../web/components/admin/format.js';
 import type { AddonInstanceView } from '../web/components/admin/types.js';
 
-const { addons } = await loadAddons();
+// Modules livrés seulement : un dépôt cornelius-modules cloné à côté ne change pas ces tests.
+const { addons } = await loadAddons({ externalRoot: null });
 
 function runtime(t: { after: (fn: () => void) => void }) {
   const db = openDatabase(':memory:');

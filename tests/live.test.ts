@@ -647,6 +647,107 @@ test('image__recall réaffiche une image gardée sans relancer de génération',
   assert.ok(f.sent.some((event) => event.type === 'response.item.create'));
   assert.equal(f.sent.filter((event) => event.type === 'session.commentary.append').length, 0);
 });
+test('mail__send reçoit l’image affichée et la personne qui parle ; le prompt l’annonce', async (t) => {
+  const id = '33333333-3333-4333-8333-333333333333';
+  const card: ImageCard = {
+    schemaVersion: 1,
+    cardType: 'image',
+    title: 'Image générée',
+    prompt: 'Un phare dans la brume',
+    imageUrl: `/api/generated-images/${id}.webp`,
+    model: 'sdxl-turbo',
+    width: 512,
+    height: 512,
+    primaryValue: null,
+    subtitle: null,
+    description: null,
+    items: [],
+    sources: [],
+  };
+  const runs: { input: unknown; args: unknown }[] = [];
+  const result = (summary: string) => ({
+    schemaVersion: 1 as const,
+    status: 'succeeded' as const,
+    result: null,
+    snapshotId: id,
+    actionRunId: null,
+    summary,
+    error: null,
+  });
+  const f = fixture(t, {
+    integrations: {
+      imageGeneration: {
+        tools: () => [],
+        handles: (name) => name === 'image__recall',
+        generate: async () => {
+          throw new Error('aucune génération attendue');
+        },
+        recall: () => ({ card, tool: result('L’image a été réaffichée sur le miroir.') }),
+      },
+      mail: {
+        tools: () => [
+          {
+            name: 'mail__send',
+            description: 'Envoyer par e-mail.',
+            parameters: { type: 'object', additionalProperties: false, properties: {} },
+          },
+        ],
+        handles: (name) => name === 'mail__send',
+        run: async (input, args) => {
+          runs.push({ input, args });
+          return result('E-mail envoyé à Baptiste, avec l’image.');
+        },
+      },
+    },
+  });
+  await f.ready();
+  const config = f.configs[0]!;
+  assert.match(String(config.instructions), /Envoi par e-mail : .*mail__send/u);
+  const delegation = (config.delegation as MediaSessionConfig.Responses).responses;
+  assert.match(String(delegation.instructions), /« moi » pour la personne qui parle/u);
+  assert.ok(delegation.tools?.some((tool) => 'name' in tool && tool.name === 'mail__send'));
+  const call = (callId: string, name: string, args: unknown) =>
+    f.emit({
+      type: 'response.event',
+      delegation_id: 'mail-delegation',
+      event: {
+        type: 'response.output_item.done',
+        item: { type: 'function_call', call_id: callId, name, arguments: JSON.stringify(args) },
+      },
+    });
+  call('recall-call', 'image__recall', { position: 1, search: null });
+  await setImmediate();
+  const args = {
+    recipient: 'Baptiste',
+    image: true,
+    position: null,
+    search: null,
+    subject: null,
+    message: null,
+  };
+  call('mail-call', 'mail__send', args);
+  await setImmediate();
+  assert.deepEqual(runs, [
+    {
+      input: {
+        profileId: null,
+        profileName: null,
+        interactionId: f.scope.interactionId,
+        callId: 'mail-call',
+        shownImageId: id,
+      },
+      args,
+    },
+  ]);
+  assert.ok(
+    f.sent.some(
+      (event) =>
+        event.type === 'response.item.create' &&
+        JSON.stringify(event).includes('E-mail envoyé à Baptiste'),
+    ),
+  );
+});
+
 test('un arrêt avant toute création distante clôture sans appel fournisseur', async (t) => {
   const f = fixture(t);
   f.controller.command({ type: 'stop' });

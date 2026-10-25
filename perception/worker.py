@@ -12,6 +12,7 @@ from vision import DEFAULT_ENGAGEMENT, Vision
 from vad import Vad
 from wake import WakeDetector
 from camera import Camera
+from browser_camera import BrowserCamera
 from enrollment import Enrollment
 from scene import MODEL_DIRECTORIES, SceneCaptioner, SceneWorker
 
@@ -33,6 +34,7 @@ class Worker:
         self.wake = WakeDetector()
         # Flux de veille par emplacement : (identifiant du flux, état openWakeWord propre).
         self.wake_streams = {}
+        self.server_camera_index = camera
         self.camera = Camera(camera, enabled=False)
         self.camera_enabled = False
         self.sequence = 0
@@ -137,7 +139,7 @@ class Worker:
 
     def scene_worker(self):
         if self.scene is None:
-            self.scene = SceneWorker(self.captioner, self.camera.frame, self.vision_emit)
+            self.scene = SceneWorker(self.captioner, lambda: self.camera.frame(), self.vision_emit)
         return self.scene
 
     def set_vision_model(self, requested, device=None, reload=False):
@@ -224,6 +226,21 @@ class Worker:
     async def commands(self, socket):
         async for message in socket:
             if isinstance(message, bytes):
+                # Binary dispatch reserves 1024 bytes for VAD PCM and 2562 bytes
+                # starting with 0x57 for wake PCM. Camera packets start with 0x43;
+                # encodeBrowserCameraFrame inserts a JPEG comment to avoid both
+                # reserved lengths. Future binary messages must preserve this rule.
+                if (len(message) >= 9 and len(message) not in (1024, 2562)
+                        and message[0] == 0x43 and message[5:7] == b"\xff\xd8"):
+                    accepted = False
+                    if isinstance(getattr(self, "camera", None), BrowserCamera) and self.camera_enabled:
+                        had_frame = self.camera.selected_id is not None
+                        accepted = await asyncio.to_thread(self.camera.receive, message[5:])
+                        if accepted and not had_frame:
+                            await socket.send(json.dumps(self.camera.status()))
+                    await socket.send(json.dumps({"type": "camera_frame_ack",
+                        "sequence": int.from_bytes(message[1:5], "big"), "accepted": accepted}))
+                    continue
                 if len(message) == 2562 and message[0] == 0x57:
                     entry = self.wake_streams.get(message[1])
                     if entry is None or self.wake.model is None:
@@ -251,8 +268,27 @@ class Worker:
                     self.last_speech, self.last_vad_sent = speaking, now
                 continue
             event = json.loads(message)
-            if event["type"] in ("camera_enabled", "camera_list", "camera_select", "camera_mode", "camera_preview"):
-                self.camera_job(lambda event=event: self.camera_command(socket, event))
+            if event["type"] == "camera_source" and event.get("source") in ("server", "browser"):
+                requested = event["source"] == "browser"
+                if requested != isinstance(self.camera, BrowserCamera):
+                    for task in list(self.camera_tasks):
+                        await task
+                    if self.scene:
+                        self.scene.cancel("Source de la caméra modifiée.")
+                    await asyncio.to_thread(self.disable_camera)
+                    self.camera = BrowserCamera() if requested else Camera(self.server_camera_index, enabled=False)
+                await socket.send(json.dumps({"type": "camera_source_status", "source": event["source"]}))
+            elif event["type"] == "browser_camera_reset":
+                if isinstance(getattr(self, "camera", None), BrowserCamera):
+                    await asyncio.to_thread(self.camera.reset)
+                    if self.vision:
+                        self.vision.reset_tracks()
+                    await socket.send(json.dumps(self.camera.status()))
+            elif event["type"] in ("camera_enabled", "camera_list", "camera_select", "camera_mode", "camera_preview"):
+                if isinstance(getattr(self, "camera", None), BrowserCamera):
+                    await self.camera_command(socket, event)
+                else:
+                    self.camera_job(lambda event=event: self.camera_command(socket, event))
             elif event["type"] == "engagement":
                 self.engagement = event["settings"]
                 if self.vision:
